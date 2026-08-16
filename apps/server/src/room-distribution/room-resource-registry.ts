@@ -11,6 +11,12 @@ import type {
   WorkTogetherRoomResourceTarget,
 } from "./room-resource-provisioner.js";
 
+/**
+ * Parser for the former static operator map. Room provisioning no longer
+ * consults `BB_WORK_TOGETHER_ROOM_RESOURCE_REGISTRY`; the live host checkout
+ * is the source of truth. This loader remains so existing fixtures and
+ * operator docs can still parse the old document shape.
+ */
 export const WORK_TOGETHER_ROOM_RESOURCE_REGISTRY_ENV =
   "BB_WORK_TOGETHER_ROOM_RESOURCE_REGISTRY" as const;
 
