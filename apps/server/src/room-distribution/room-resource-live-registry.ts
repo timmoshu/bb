@@ -41,7 +41,10 @@ function defaultProviderId(): string {
 
 function targetFromResolvedCheckout(
   hostId: string,
-  repository: NonNullable<ResolveGithubRepositoryResult["repository"]>,
+  repository: Extract<
+    ResolveGithubRepositoryResult,
+    { outcome: "found" }
+  >["repository"],
   sources: ReturnType<typeof listPublicLocalPathProjectSourcesForHost>,
 ): WorkTogetherRoomResourceTarget {
   const matching = sources
@@ -93,7 +96,7 @@ export function createLiveWorkTogetherRoomResourceRegistry(
         typeof input?.providerRepositoryId !== "string" ||
         !PROVIDER_REPOSITORY_ID.test(input.providerRepositoryId)
       ) {
-        return null;
+        throw new WorkTogetherRoomProvisioningUnavailableError();
       }
 
       const hosts = listPublicHosts(deps.db);
@@ -125,10 +128,10 @@ export function createLiveWorkTogetherRoomResourceRegistry(
         throw new WorkTogetherRoomProvisioningUnavailableError();
       }
 
-      if (!result.identityResolved) {
+      if (result.outcome === "unavailable") {
         throw new WorkTogetherRoomProvisioningUnavailableError();
       }
-      if (result.repository === null) {
+      if (result.outcome === "not_found") {
         return null;
       }
       return targetFromResolvedCheckout(host.id, result.repository, sources);

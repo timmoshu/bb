@@ -1584,7 +1584,6 @@ const resolveGithubRepositoryCommandSchema = z
 export const resolvedGithubRepositorySchema = z
   .object({
     name: z.string().min(1),
-    originUrl: z.string().min(1),
     path: z.string().min(1),
   })
   .strict();
@@ -1592,12 +1591,19 @@ export type ResolvedGithubRepository = z.infer<
   typeof resolvedGithubRepositorySchema
 >;
 
-export const resolveGithubRepositoryResultSchema = z
-  .object({
-    identityResolved: z.boolean(),
-    repository: resolvedGithubRepositorySchema.nullable(),
-  })
-  .strict();
+export const resolveGithubRepositoryResultSchema = z.discriminatedUnion(
+  "outcome",
+  [
+    z
+      .object({
+        outcome: z.literal("found"),
+        repository: resolvedGithubRepositorySchema,
+      })
+      .strict(),
+    z.object({ outcome: z.literal("not_found") }).strict(),
+    z.object({ outcome: z.literal("unavailable") }).strict(),
+  ],
+);
 export type ResolveGithubRepositoryResult = z.infer<
   typeof resolveGithubRepositoryResultSchema
 >;

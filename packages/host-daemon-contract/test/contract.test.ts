@@ -456,11 +456,10 @@ const ONLINE_RPC_RESPONSE_RESULT_FIXTURES: OnlineRpcResponseResultFixtures = {
     truncated: false,
   },
   "workspace.resolve_github_repository": {
-    identityResolved: true,
+    outcome: "found",
     repository: {
       path: "/home/user/projects/cc-sandbox",
       name: "cc-sandbox",
-      originUrl: "https://github.com/timmoshu/cc-sandbox.git",
     },
   },
   "workspace.status": WORKSPACE_UNAVAILABLE_RESULT,

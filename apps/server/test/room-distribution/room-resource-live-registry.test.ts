@@ -9,9 +9,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../../src/errors.js";
 import { createLiveWorkTogetherRoomResourceRegistry } from "../../src/room-distribution/room-resource-live-registry.js";
-import {
-  WorkTogetherRoomProvisioningUnavailableError,
-} from "../../src/room-distribution/room-resource-provisioner.js";
+import { WorkTogetherRoomProvisioningUnavailableError } from "../../src/room-distribution/room-resource-provisioner.js";
 
 const CANDIDATE_HOST_ID = "893b7804-b485-4763-aaaa-b5be3f3ae34e";
 const CC_SANDBOX_GITHUB_ID = "1268425814";
@@ -56,11 +54,10 @@ describe("live Work Together Room resource registry", () => {
       expect(args.providerRepositoryId).toBe(CC_SANDBOX_GITHUB_ID);
       expect(args.knownPaths).toEqual([CC_SANDBOX_PATH]);
       return {
-        identityResolved: true,
+        outcome: "found" as const,
         repository: {
           path: CC_SANDBOX_PATH,
           name: "cc-sandbox",
-          originUrl: "https://github.com/timmoshu/cc-sandbox.git",
         },
       };
     };
@@ -92,11 +89,10 @@ describe("live Work Together Room resource registry", () => {
     const registry = createLiveWorkTogetherRoomResourceRegistry({
       db,
       resolveGithubRepository: async () => ({
-        identityResolved: true,
+        outcome: "found",
         repository: {
           path: "/home/user/src/new-ready-repo",
           name: "new-ready-repo",
-          originUrl: "https://github.com/acme/new-ready-repo.git",
         },
       }),
     });
@@ -123,8 +119,7 @@ describe("live Work Together Room resource registry", () => {
     const registry = createLiveWorkTogetherRoomResourceRegistry({
       db,
       resolveGithubRepository: async () => ({
-        identityResolved: true,
-        repository: null,
+        outcome: "not_found",
       }),
     });
 
@@ -145,8 +140,7 @@ describe("live Work Together Room resource registry", () => {
     const registry = createLiveWorkTogetherRoomResourceRegistry({
       db,
       resolveGithubRepository: async () => ({
-        identityResolved: false,
-        repository: null,
+        outcome: "unavailable",
       }),
     });
 
@@ -154,6 +148,27 @@ describe("live Work Together Room resource registry", () => {
       registry.resolve({
         candidateHostId: CANDIDATE_HOST_ID,
         providerRepositoryId: CC_SANDBOX_GITHUB_ID,
+      }),
+    ).rejects.toBeInstanceOf(WorkTogetherRoomProvisioningUnavailableError);
+  });
+
+  it("does not classify an invalid repository id as a confirmed miss", async () => {
+    const db = setupDb();
+    upsertHost(db, noopNotifier, {
+      name: "wt-cell",
+      type: "persistent",
+    });
+    const registry = createLiveWorkTogetherRoomResourceRegistry({
+      db,
+      resolveGithubRepository: async () => {
+        throw new Error("must not ask the host for an invalid identity");
+      },
+    });
+
+    await expect(
+      registry.resolve({
+        candidateHostId: CANDIDATE_HOST_ID,
+        providerRepositoryId: "not-a-github-id",
       }),
     ).rejects.toBeInstanceOf(WorkTogetherRoomProvisioningUnavailableError);
   });
@@ -207,6 +222,9 @@ describe("live Work Together Room resource registry", () => {
         candidateHostId: CANDIDATE_HOST_ID,
         providerRepositoryId: CC_SANDBOX_GITHUB_ID,
       }),
-    ).rejects.toMatchObject({ status: 502, body: { code: "host_unavailable" } });
+    ).rejects.toMatchObject({
+      status: 502,
+      body: { code: "host_unavailable" },
+    });
   });
 });

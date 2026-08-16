@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readdir } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, normalize } from "node:path";
 import { promisify } from "node:util";
@@ -7,12 +7,13 @@ import type {
   ResolveGithubRepositoryResult,
   ResolvedGithubRepository,
 } from "@bb/host-daemon-contract";
-import { inspectProjectPath } from "./project.js";
+import { runGit } from "@bb/host-workspace";
 import { discoverRepos, readOriginUrl } from "./discover-repos.js";
 
 const execFileAsync = promisify(execFile);
 const GITHUB_FULL_NAME = /^([^/\s]+)\/([^/\s]+)$/u;
 const GITHUB_API_TIMEOUT_MS = 8_000;
+const GIT_REMOTE_TIMEOUT_MS = 2_000;
 
 export type ResolveGithubFullName = (
   providerRepositoryId: string,
@@ -30,32 +31,39 @@ export interface ResolveGithubRepositoryArgs {
   discover?: typeof discoverRepos;
 }
 
-const UNRESOLVED_IDENTITY = Object.freeze({
-  identityResolved: false,
-  repository: null,
-});
-
-const CONFIRMED_MISS = Object.freeze({
-  identityResolved: true,
-  repository: null,
-});
+const UNAVAILABLE = Object.freeze({ outcome: "unavailable" as const });
+const CONFIRMED_MISS = Object.freeze({ outcome: "not_found" as const });
 
 /**
  * Collapse `git@github.com:o/r.git` and `https://github.com/o/r` to
  * `owner/repo` (lowercase). Non-GitHub remotes do not match a GitHub id.
  */
 export function githubNwoFromRemote(url: string): string | null {
-  const withoutGit = url.trim().replace(/\.git$/u, "").replace(/\/+$/u, "");
-  const ssh = /^git@github\.com:([^/]+)\/([^/]+)$/iu.exec(withoutGit);
+  const withoutGit = url
+    .trim()
+    .replace(/\/+$/u, "")
+    .replace(/\.git$/u, "");
+  const ssh = /^git@github\.com(?:-[^:]+)?:([^/]+)\/([^/]+)$/iu.exec(
+    withoutGit,
+  );
   if (ssh?.[1] && ssh[2]) {
     return `${ssh[1]}/${ssh[2]}`.toLowerCase();
   }
-  const https =
-    /^(?:https?:\/\/|ssh:\/\/git@)github\.com\/([^/]+)\/([^/]+)$/iu.exec(
-      withoutGit,
-    );
-  if (https?.[1] && https[2]) {
-    return `${https[1]}/${https[2]}`.toLowerCase();
+  try {
+    const parsed = new URL(withoutGit);
+    if (!["git:", "http:", "https:", "ssh:"].includes(parsed.protocol)) {
+      return null;
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname !== "github.com" && !hostname.startsWith("github.com-")) {
+      return null;
+    }
+    const match = /^\/([^/]+)\/([^/]+)$/u.exec(parsed.pathname);
+    if (match?.[1] && match[2]) {
+      return `${match[1]}/${match[2]}`.toLowerCase();
+    }
+  } catch {
+    return null;
   }
   return null;
 }
@@ -84,16 +92,20 @@ async function resolveFullNameViaGh(
 
 async function resolveFullNameViaApi(
   providerRepositoryId: string,
+  env: NodeJS.ProcessEnv,
 ): Promise<string | null> {
   try {
+    const token = env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim();
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "bb-host-daemon",
+      "X-GitHub-Api-Version": "2022-11-28",
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
     const response = await fetch(
       `https://api.github.com/repositories/${providerRepositoryId}`,
       {
-        headers: {
-          Accept: "application/vnd.github+json",
-          "User-Agent": "bb-host-daemon",
-          "X-GitHub-Api-Version": "2022-11-28",
-        },
+        headers,
         signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
       },
     );
@@ -119,7 +131,7 @@ export async function defaultResolveGithubFullName(
 ): Promise<string | null> {
   return (
     (await resolveFullNameViaGh(providerRepositoryId, env)) ??
-    (await resolveFullNameViaApi(providerRepositoryId))
+    (await resolveFullNameViaApi(providerRepositoryId, env))
   );
 }
 
@@ -147,66 +159,114 @@ function uniqueAbsolutePaths(paths: readonly string[]): string[] {
   return unique;
 }
 
-async function listExistingCheckoutPaths(dataDir: string): Promise<string[]> {
+interface PathSearchResult {
+  complete: boolean;
+  repository: ResolvedGithubRepository | null;
+}
+
+type RepositoryCandidate = ResolvedGithubRepository & { originUrl: string };
+
+function isFileSystemErrorWithCode(
+  error: unknown,
+  code: string,
+): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === code;
+}
+
+async function listExistingCheckoutPaths(
+  dataDir: string,
+): Promise<{ complete: boolean; paths: string[] }> {
   const root = join(dataDir, "checkouts");
-  let names: string[];
   try {
     const entries = await readdir(root, { withFileTypes: true });
-    names = entries
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
-      .map((entry) => entry.name);
-  } catch {
-    return [];
+    const paths = entries
+      .filter(
+        (entry) =>
+          (entry.isDirectory() || entry.isSymbolicLink()) &&
+          !entry.name.startsWith("."),
+      )
+      .map((entry) => join(root, entry.name))
+      .sort();
+    return { complete: true, paths };
+  } catch (error) {
+    return isFileSystemErrorWithCode(error, "ENOENT")
+      ? { complete: true, paths: [] }
+      : { complete: false, paths: [] };
   }
-  return names.map((name) => join(root, name)).sort();
 }
 
 async function repositoryAtPath(
   repoPath: string,
-): Promise<ResolvedGithubRepository | null> {
+): Promise<
+  | { outcome: "found"; repository: RepositoryCandidate }
+  | { outcome: "not_found" }
+  | { outcome: "unavailable" }
+> {
+  try {
+    await lstat(join(repoPath, ".git"));
+  } catch (error) {
+    return isFileSystemErrorWithCode(error, "ENOENT")
+      ? { outcome: "not_found" }
+      : { outcome: "unavailable" };
+  }
+
   const fromConfig = await readOriginUrl(repoPath);
   if (fromConfig !== null) {
     return {
-      path: repoPath,
-      name: basename(repoPath),
-      originUrl: fromConfig,
+      outcome: "found",
+      repository: {
+        path: repoPath,
+        name: basename(repoPath),
+        originUrl: fromConfig,
+      },
     };
   }
+
   try {
-    const inspected = await inspectProjectPath(repoPath);
-    if (inspected.gitRemoteUrl === null) return null;
+    const result = await runGit(["remote", "get-url", "origin"], {
+      cwd: repoPath,
+      allowFailure: true,
+      timeoutMs: GIT_REMOTE_TIMEOUT_MS,
+    });
+    if (result.exitCode === 2) return { outcome: "not_found" };
+    if (result.exitCode !== 0 || result.stdout.trim().length === 0) {
+      return { outcome: "unavailable" };
+    }
     return {
-      path: inspected.path,
-      name: basename(inspected.path),
-      originUrl: inspected.gitRemoteUrl,
+      outcome: "found",
+      repository: {
+        path: repoPath,
+        name: basename(repoPath),
+        originUrl: result.stdout.trim(),
+      },
     };
   } catch {
-    return null;
+    return { outcome: "unavailable" };
   }
-}
-
-function pickLexicographicallyFirst(
-  matches: ResolvedGithubRepository[],
-): ResolvedGithubRepository | null {
-  if (matches.length === 0) return null;
-  matches.sort((left, right) =>
-    left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
-  );
-  return matches[0] ?? null;
 }
 
 async function firstMatchingRepository(
   paths: readonly string[],
   nwo: string,
-): Promise<ResolvedGithubRepository | null> {
-  const matches: ResolvedGithubRepository[] = [];
-  for (const repoPath of paths) {
-    const repository = await repositoryAtPath(repoPath);
-    if (repository === null) continue;
-    if (githubNwoFromRemote(repository.originUrl) !== nwo) continue;
-    matches.push(repository);
+): Promise<PathSearchResult> {
+  let complete = true;
+  for (const repoPath of [...new Set(paths)].sort()) {
+    const result = await repositoryAtPath(repoPath);
+    if (result.outcome === "unavailable") {
+      complete = false;
+      continue;
+    }
+    if (result.outcome === "not_found") continue;
+    if (githubNwoFromRemote(result.repository.originUrl) !== nwo) continue;
+    return {
+      complete,
+      repository: {
+        path: result.repository.path,
+        name: result.repository.name,
+      },
+    };
   }
-  return pickLexicographicallyFirst(matches);
+  return { complete, repository: null };
 }
 
 /**
@@ -220,46 +280,42 @@ export async function resolveGithubRepository(
   const env = args.env ?? process.env;
   const resolveFullName = args.resolveFullName ?? defaultResolveGithubFullName;
   const nwo = await resolveFullName(args.providerRepositoryId, env);
-  if (nwo === null) return UNRESOLVED_IDENTITY;
+  if (nwo === null) return UNAVAILABLE;
 
-  const knownMatch = await firstMatchingRepository(
+  const knownSearch = await firstMatchingRepository(
     uniqueAbsolutePaths(args.knownPaths),
     nwo,
   );
-  if (knownMatch !== null) {
-    return { identityResolved: true, repository: knownMatch };
+  if (knownSearch.repository !== null) {
+    return { outcome: "found", repository: knownSearch.repository };
   }
 
-  const checkoutMatch = await firstMatchingRepository(
-    await listExistingCheckoutPaths(args.dataDir),
-    nwo,
-  );
-  if (checkoutMatch !== null) {
-    return { identityResolved: true, repository: checkoutMatch };
+  const checkouts = await listExistingCheckoutPaths(args.dataDir);
+  const checkoutSearch = await firstMatchingRepository(checkouts.paths, nwo);
+  if (checkoutSearch.repository !== null) {
+    return { outcome: "found", repository: checkoutSearch.repository };
   }
 
   const discovered = await (args.discover ?? discoverRepos)({
-    maxDepth: 5,
-    sinceDays: 3650,
-    limit: 200,
+    maxDepth: Number.MAX_SAFE_INTEGER,
+    sinceDays: Number.POSITIVE_INFINITY,
+    limit: Number.MAX_SAFE_INTEGER,
     includeAgentHistory: false,
     home: args.home ?? homedir(),
     env,
   });
-  const discoveredMatches = discovered.repos.flatMap((repo) => {
-    if (repo.originUrl === null) return [];
-    if (githubNwoFromRemote(repo.originUrl) !== nwo) return [];
-    return [
-      {
-        path: repo.path,
-        name: repo.name,
-        originUrl: repo.originUrl,
-      } satisfies ResolvedGithubRepository,
-    ];
-  });
-  const discoveredMatch = pickLexicographicallyFirst(discoveredMatches);
-  if (discoveredMatch !== null) {
-    return { identityResolved: true, repository: discoveredMatch };
+  const discoveredSearch = await firstMatchingRepository(
+    discovered.repos.map((repo) => repo.path),
+    nwo,
+  );
+  if (discoveredSearch.repository !== null) {
+    return { outcome: "found", repository: discoveredSearch.repository };
   }
-  return CONFIRMED_MISS;
+  return knownSearch.complete &&
+    checkouts.complete &&
+    checkoutSearch.complete &&
+    !discovered.truncated &&
+    discoveredSearch.complete
+    ? CONFIRMED_MISS
+    : UNAVAILABLE;
 }
