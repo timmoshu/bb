@@ -51,15 +51,16 @@ export function newThreadEnvironmentArgsToSeed(
           : null,
     };
   }
-  // Unmanaged. `path` has no picker control — the composer always submits
-  // `path: null` — so it is not represented here.
-  return {
-    selectionValue: encodeHostValue(hostId, "local"),
-    branch:
-      workspace.branch === undefined
-        ? null
-        : workspace.branch.kind === "existing"
-          ? { name: workspace.branch.name, isNew: false }
-          : { name: workspace.branch.baseBranch, isNew: true },
-  };
+  if (workspace.type === "unmanaged") {
+    return {
+      selectionValue: encodeHostValue(hostId, "local"),
+      branch:
+        workspace.branch === undefined
+          ? null
+          : workspace.branch.kind === "existing"
+            ? { name: workspace.branch.name, isNew: false }
+            : { name: workspace.branch.baseBranch, isNew: true },
+    };
+  }
+  return { selectionValue: encodeHostValue(hostId, "local"), branch: null };
 }

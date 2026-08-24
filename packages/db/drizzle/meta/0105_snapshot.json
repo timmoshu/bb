@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "930364e4-56cf-4b48-884c-cd826e1bc7bd",
-  "prevId": "c9b23456-ce86-4558-ad57-79e84220067a",
+  "id": "46efc413-5963-41e6-a91f-2e99b17fce94",
+  "prevId": "862dae06-1517-4bc2-b939-2e81fa6df8bf",
   "tables": {
     "app_settings": {
       "name": "app_settings",
@@ -3276,6 +3276,34 @@
           "notNull": false,
           "autoincrement": false
         },
+        "result_id": {
+          "name": "result_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "result_revision": {
+          "name": "result_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "result_digest": {
+          "name": "result_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "result_submission_json": {
+          "name": "result_submission_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -3329,7 +3357,7 @@
       "checkConstraints": {
         "thread_command_admissions_result_shape_check": {
           "name": "thread_command_admissions_result_shape_check",
-          "value": "(\n        (\"thread_command_admissions\".\"command_kind\" = 'message.send' AND \"thread_command_admissions\".\"result_disposition\" = 'started' AND \"thread_command_admissions\".\"result_event_sequence\" IS NOT NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NULL AND \"thread_command_admissions\".\"result_interaction_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'message.send' AND \"thread_command_admissions\".\"result_disposition\" = 'queued' AND \"thread_command_admissions\".\"result_queued_message_id\" IS NOT NULL AND \"thread_command_admissions\".\"result_event_sequence\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NULL AND \"thread_command_admissions\".\"result_interaction_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'message.steer' AND \"thread_command_admissions\".\"result_disposition\" = 'steered' AND \"thread_command_admissions\".\"result_event_sequence\" IS NOT NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NOT NULL AND \"thread_command_admissions\".\"result_interaction_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'thread.interrupt' AND \"thread_command_admissions\".\"result_disposition\" = 'interrupted' AND \"thread_command_admissions\".\"result_event_sequence\" IS NOT NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NOT NULL AND \"thread_command_admissions\".\"result_interaction_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'interaction.answer' AND \"thread_command_admissions\".\"result_disposition\" = 'answered' AND \"thread_command_admissions\".\"result_interaction_id\" IS NOT NULL AND \"thread_command_admissions\".\"result_event_sequence\" IS NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'interaction.approve' AND \"thread_command_admissions\".\"result_disposition\" = 'approved' AND \"thread_command_admissions\".\"result_interaction_id\" IS NOT NULL AND \"thread_command_admissions\".\"result_event_sequence\" IS NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'read.mark' AND \"thread_command_admissions\".\"result_disposition\" = 'marked' AND \"thread_command_admissions\".\"result_read_cursor\" IS NOT NULL AND \"thread_command_admissions\".\"result_event_sequence\" IS NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NULL AND \"thread_command_admissions\".\"result_interaction_id\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'branch.publish' AND \"thread_command_admissions\".\"result_disposition\" = 'published' AND \"thread_command_admissions\".\"result_pr_url\" IS NOT NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NOT NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NOT NULL AND \"thread_command_admissions\".\"result_event_sequence\" IS NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NULL AND \"thread_command_admissions\".\"result_interaction_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL)\n      )"
+          "value": "(\n        (\"thread_command_admissions\".\"command_kind\" = 'message.send' AND \"thread_command_admissions\".\"result_disposition\" = 'started' AND \"thread_command_admissions\".\"result_event_sequence\" IS NOT NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NULL AND \"thread_command_admissions\".\"result_interaction_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL AND \"thread_command_admissions\".\"result_id\" IS NULL AND \"thread_command_admissions\".\"result_revision\" IS NULL AND \"thread_command_admissions\".\"result_digest\" IS NULL AND \"thread_command_admissions\".\"result_submission_json\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'message.send' AND \"thread_command_admissions\".\"result_disposition\" = 'queued' AND \"thread_command_admissions\".\"result_queued_message_id\" IS NOT NULL AND \"thread_command_admissions\".\"result_event_sequence\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NULL AND \"thread_command_admissions\".\"result_interaction_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL AND \"thread_command_admissions\".\"result_id\" IS NULL AND \"thread_command_admissions\".\"result_revision\" IS NULL AND \"thread_command_admissions\".\"result_digest\" IS NULL AND \"thread_command_admissions\".\"result_submission_json\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'message.steer' AND \"thread_command_admissions\".\"result_disposition\" = 'steered' AND \"thread_command_admissions\".\"result_event_sequence\" IS NOT NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NOT NULL AND \"thread_command_admissions\".\"result_interaction_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL AND \"thread_command_admissions\".\"result_id\" IS NULL AND \"thread_command_admissions\".\"result_revision\" IS NULL AND \"thread_command_admissions\".\"result_digest\" IS NULL AND \"thread_command_admissions\".\"result_submission_json\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'thread.interrupt' AND \"thread_command_admissions\".\"result_disposition\" = 'interrupted' AND \"thread_command_admissions\".\"result_event_sequence\" IS NOT NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NOT NULL AND \"thread_command_admissions\".\"result_interaction_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL AND \"thread_command_admissions\".\"result_id\" IS NULL AND \"thread_command_admissions\".\"result_revision\" IS NULL AND \"thread_command_admissions\".\"result_digest\" IS NULL AND \"thread_command_admissions\".\"result_submission_json\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'interaction.answer' AND \"thread_command_admissions\".\"result_disposition\" = 'answered' AND \"thread_command_admissions\".\"result_interaction_id\" IS NOT NULL AND \"thread_command_admissions\".\"result_event_sequence\" IS NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL AND \"thread_command_admissions\".\"result_id\" IS NULL AND \"thread_command_admissions\".\"result_revision\" IS NULL AND \"thread_command_admissions\".\"result_digest\" IS NULL AND \"thread_command_admissions\".\"result_submission_json\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'interaction.approve' AND \"thread_command_admissions\".\"result_disposition\" = 'approved' AND \"thread_command_admissions\".\"result_interaction_id\" IS NOT NULL AND \"thread_command_admissions\".\"result_event_sequence\" IS NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL AND \"thread_command_admissions\".\"result_id\" IS NULL AND \"thread_command_admissions\".\"result_revision\" IS NULL AND \"thread_command_admissions\".\"result_digest\" IS NULL AND \"thread_command_admissions\".\"result_submission_json\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'read.mark' AND \"thread_command_admissions\".\"result_disposition\" = 'marked' AND \"thread_command_admissions\".\"result_read_cursor\" IS NOT NULL AND \"thread_command_admissions\".\"result_event_sequence\" IS NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NULL AND \"thread_command_admissions\".\"result_interaction_id\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL AND \"thread_command_admissions\".\"result_id\" IS NULL AND \"thread_command_admissions\".\"result_revision\" IS NULL AND \"thread_command_admissions\".\"result_digest\" IS NULL AND \"thread_command_admissions\".\"result_submission_json\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'branch.publish' AND \"thread_command_admissions\".\"result_disposition\" = 'published' AND \"thread_command_admissions\".\"result_pr_url\" IS NOT NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NOT NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NOT NULL AND \"thread_command_admissions\".\"result_event_sequence\" IS NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NULL AND \"thread_command_admissions\".\"result_interaction_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL AND \"thread_command_admissions\".\"result_id\" IS NULL AND \"thread_command_admissions\".\"result_revision\" IS NULL AND \"thread_command_admissions\".\"result_digest\" IS NULL AND \"thread_command_admissions\".\"result_submission_json\" IS NULL)\n        OR\n        (\"thread_command_admissions\".\"command_kind\" = 'result.publish' AND \"thread_command_admissions\".\"result_disposition\" = 'result-published' AND \"thread_command_admissions\".\"result_id\" IS NOT NULL AND \"thread_command_admissions\".\"result_revision\" IS NOT NULL AND \"thread_command_admissions\".\"result_digest\" IS NOT NULL AND \"thread_command_admissions\".\"result_submission_json\" IS NOT NULL AND \"thread_command_admissions\".\"result_event_sequence\" IS NULL AND \"thread_command_admissions\".\"result_queued_message_id\" IS NULL AND \"thread_command_admissions\".\"result_expected_turn_id\" IS NULL AND \"thread_command_admissions\".\"result_interaction_id\" IS NULL AND \"thread_command_admissions\".\"result_read_cursor\" IS NULL AND \"thread_command_admissions\".\"result_pr_url\" IS NULL AND \"thread_command_admissions\".\"result_pr_number\" IS NULL AND \"thread_command_admissions\".\"result_commit_sha\" IS NULL)\n      )"
         }
       }
     },
@@ -4223,6 +4251,199 @@
           "value": "\"work_together_room_resource_reservations\".\"environment_template\" IN ('isolated-scratch', 'detached-read-only', 'managed-worktree')"
         }
       }
+    },
+    "work_together_room_context_applies": {
+      "name": "work_together_room_context_applies",
+      "columns": {
+        "binding_id": {
+          "name": "binding_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "context_version": {
+          "name": "context_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "digest": {
+          "name": "digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "bytes": {
+          "name": "bytes",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "admission_sequence": {
+          "name": "admission_sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "wt_room_context_binding_version_idx": {
+          "name": "wt_room_context_binding_version_idx",
+          "columns": [
+            "binding_id",
+            "context_version"
+          ],
+          "isUnique": true
+        },
+        "wt_room_context_binding_sequence_idx": {
+          "name": "wt_room_context_binding_sequence_idx",
+          "columns": [
+            "binding_id",
+            "admission_sequence"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "work_together_room_context_applies_binding_id_work_together_room_resource_reservations_binding_id_fk": {
+          "name": "work_together_room_context_applies_binding_id_work_together_room_resource_reservations_binding_id_fk",
+          "tableFrom": "work_together_room_context_applies",
+          "tableTo": "work_together_room_resource_reservations",
+          "columnsFrom": [
+            "binding_id"
+          ],
+          "columnsTo": [
+            "binding_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "work_together_room_context_applies_binding_id_request_id_pk": {
+          "columns": [
+            "binding_id",
+            "request_id"
+          ],
+          "name": "work_together_room_context_applies_binding_id_request_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "work_together_room_stream_contexts": {
+      "name": "work_together_room_stream_contexts",
+      "columns": {
+        "binding_id": {
+          "name": "binding_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "context_version": {
+          "name": "context_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "digest": {
+          "name": "digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "wt_room_stream_context_thread_idx": {
+          "name": "wt_room_stream_context_thread_idx",
+          "columns": [
+            "thread_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "work_together_room_stream_contexts_binding_id_work_together_room_resource_reservations_binding_id_fk": {
+          "name": "work_together_room_stream_contexts_binding_id_work_together_room_resource_reservations_binding_id_fk",
+          "tableFrom": "work_together_room_stream_contexts",
+          "tableTo": "work_together_room_resource_reservations",
+          "columnsFrom": [
+            "binding_id"
+          ],
+          "columnsTo": [
+            "binding_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "work_together_room_stream_contexts_thread_id_threads_id_fk": {
+          "name": "work_together_room_stream_contexts_thread_id_threads_id_fk",
+          "tableFrom": "work_together_room_stream_contexts",
+          "tableTo": "threads",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "work_together_room_stream_contexts_binding_id_thread_id_pk": {
+          "columns": [
+            "binding_id",
+            "thread_id"
+          ],
+          "name": "work_together_room_stream_contexts_binding_id_thread_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     }
   },
   "views": {},
