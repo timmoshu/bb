@@ -495,6 +495,16 @@ function isInterruptedRoomProvisioning(
   if (thread === null || getActiveThreadProvisionContext(thread.id) !== null) {
     return false;
   }
+  const environment =
+    thread.environmentId === null
+      ? null
+      : getEnvironment(deps.db, thread.environmentId);
+  if (
+    environment?.provisionFailure === "revision_not_found" ||
+    environment?.provisionFailure === "unavailable"
+  ) {
+    return false;
+  }
   if (thread.status === "starting") {
     return true;
   }

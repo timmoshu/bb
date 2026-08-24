@@ -396,6 +396,13 @@ describe("Work Together Room resource provisioner", () => {
         errorCode: "revision_not_found",
         errorMessage: "Revision is not available",
       });
+      expect(
+        harness.db
+          .select({ provisionFailure: environments.provisionFailure })
+          .from(environments)
+          .where(eq(environments.id, created.environmentId))
+          .get(),
+      ).toEqual({ provisionFailure: "revision_not_found" });
 
       await expect(
         provisioner.provision({ principal: PRINCIPAL, launch: exactLaunch }),
@@ -614,6 +621,7 @@ describe("Work Together Room resource provisioner", () => {
         isWorktree: false,
         branchName: null,
         defaultBranch: null,
+        verifiedBaseRevision: null,
         transcript: [],
       });
 
@@ -772,6 +780,7 @@ describe("Work Together Room resource provisioner", () => {
         isWorktree: true,
         branchName: null,
         defaultBranch: "main",
+        verifiedBaseRevision: null,
         transcript: [],
       });
 

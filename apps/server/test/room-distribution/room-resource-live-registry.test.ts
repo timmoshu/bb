@@ -3,6 +3,7 @@ import {
   createProject,
   migrate,
   noopNotifier,
+  openSession,
   upsertHost,
   upsertProjectExecutionDefaults,
 } from "@bb/db";
@@ -21,13 +22,28 @@ function setupDb() {
   return db;
 }
 
+function seedActiveHost(db: ReturnType<typeof setupDb>) {
+  const host = upsertHost(db, noopNotifier, {
+    name: "wt-cell",
+    type: "persistent",
+  });
+  openSession(db, noopNotifier, {
+    hostId: host.id,
+    instanceId: "instance-1",
+    hostName: "wt-cell",
+    hostType: "persistent",
+    dataDir: `/tmp/bb-host-data/${host.id}`,
+    protocolVersion: 1,
+    heartbeatIntervalMs: 5_000,
+    leaseTimeoutMs: 30_000,
+  });
+  return host;
+}
+
 describe("live Work Together Room resource registry", () => {
   it("resolves a Ready cc-sandbox binding from the host checkout, not a static pair", async () => {
     const db = setupDb();
-    const host = upsertHost(db, noopNotifier, {
-      name: "wt-cell",
-      type: "persistent",
-    });
+    const host = seedActiveHost(db);
     const { project } = createProject(db, noopNotifier, {
       name: "cc-sandbox",
       source: {
@@ -74,6 +90,7 @@ describe("live Work Together Room resource registry", () => {
       }),
     ).resolves.toEqual({
       bbHostId: host.id,
+      dataDir: `/tmp/bb-host-data/${host.id}`,
       providerId: "codex",
       projectName: "cc-sandbox",
       sourcePath: CC_SANDBOX_PATH,
@@ -82,10 +99,7 @@ describe("live Work Together Room resource registry", () => {
 
   it("uses the checkout basename and product default provider when no BB project exists", async () => {
     const db = setupDb();
-    const host = upsertHost(db, noopNotifier, {
-      name: "wt-cell",
-      type: "persistent",
-    });
+    const host = seedActiveHost(db);
     const registry = createLiveWorkTogetherRoomResourceRegistry({
       db,
       resolveGithubRepository: async () => ({
@@ -104,6 +118,7 @@ describe("live Work Together Room resource registry", () => {
       }),
     ).resolves.toEqual({
       bbHostId: host.id,
+      dataDir: `/tmp/bb-host-data/${host.id}`,
       providerId: "codex",
       projectName: "new-ready-repo",
       sourcePath: "/home/user/src/new-ready-repo",
@@ -112,10 +127,7 @@ describe("live Work Together Room resource registry", () => {
 
   it("returns null when the host confirms the repository is not checked out", async () => {
     const db = setupDb();
-    upsertHost(db, noopNotifier, {
-      name: "wt-cell",
-      type: "persistent",
-    });
+    seedActiveHost(db);
     const registry = createLiveWorkTogetherRoomResourceRegistry({
       db,
       resolveGithubRepository: async () => ({
@@ -133,10 +145,7 @@ describe("live Work Together Room resource registry", () => {
 
   it("is unavailable when GitHub identity cannot be resolved", async () => {
     const db = setupDb();
-    upsertHost(db, noopNotifier, {
-      name: "wt-cell",
-      type: "persistent",
-    });
+    seedActiveHost(db);
     const registry = createLiveWorkTogetherRoomResourceRegistry({
       db,
       resolveGithubRepository: async () => ({
@@ -154,10 +163,7 @@ describe("live Work Together Room resource registry", () => {
 
   it("does not classify an invalid repository id as a confirmed miss", async () => {
     const db = setupDb();
-    upsertHost(db, noopNotifier, {
-      name: "wt-cell",
-      type: "persistent",
-    });
+    seedActiveHost(db);
     const registry = createLiveWorkTogetherRoomResourceRegistry({
       db,
       resolveGithubRepository: async () => {
@@ -206,10 +212,7 @@ describe("live Work Together Room resource registry", () => {
 
   it("rethrows host ApiError so HTTP does not collapse it to 503", async () => {
     const db = setupDb();
-    upsertHost(db, noopNotifier, {
-      name: "wt-cell",
-      type: "persistent",
-    });
+    seedActiveHost(db);
     const registry = createLiveWorkTogetherRoomResourceRegistry({
       db,
       resolveGithubRepository: async () => {

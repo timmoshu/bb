@@ -95,6 +95,10 @@ jobs:
           pnpm-version: ${{ env.PNPM_VERSION }}
           cache-prefix: test-${{ matrix.shard }}
 
+      - name: Install bubblewrap for Room sandbox cases
+        if: ${{ matrix.shard == 'integration' }}
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+
       - name: Test
         run: pnpm exec turbo run test ${{ matrix.filter }} --cache-dir=.turbo/cache --output-logs=new-only
 

@@ -866,6 +866,8 @@ describe("Room interaction.answer / interaction.approve / read.mark commands", (
           "message.send",
           "message.steer",
           "interaction.answer",
+          "result.publish",
+          "context.apply",
           "read.mark",
         ],
       });

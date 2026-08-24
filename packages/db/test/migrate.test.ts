@@ -247,7 +247,17 @@ const latestMigrationWhen = Math.max(
   ).entries.map((entry) => entry.when),
 );
 
+function dropWorkTogetherRoomContextTables(db: DbConnection): void {
+  db.$client
+    .prepare("DROP TABLE IF EXISTS work_together_room_stream_contexts")
+    .run();
+  db.$client
+    .prepare("DROP TABLE IF EXISTS work_together_room_context_applies")
+    .run();
+}
+
 function dropLateAdmissionTables(db: DbConnection): void {
+  dropWorkTogetherRoomContextTables(db);
   db.$client
     .prepare("DROP TABLE IF EXISTS work_together_room_resource_reservations")
     .run();
@@ -303,6 +313,7 @@ function dropQueuedMessageAdmissionReferenceSchema(db: DbConnection): void {
   // re-applicable also makes later additive migrations re-applicable, so
   // remove their tables and environment columns before Drizzle replays the
   // forward chain.
+  dropWorkTogetherRoomContextTables(db);
   db.$client
     .prepare("DROP TABLE IF EXISTS work_together_room_resource_reservations")
     .run();
