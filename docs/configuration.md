@@ -661,6 +661,21 @@ Connect, automations, secrets, and side-chat start disabled.
 ask-user-question, custom-instructions, inline-vis, and provider-retry start
 enabled. Workflows stays disabled.
 
+In `BB_PRINCIPAL_MODE=work-together`, BB also loads the server-owned Vespyn
+runtime packaged at `plugins/vespyn-runtime`. This is infrastructure, not an
+installed plugin: it has no catalog entry, installed-plugin row, settings, or
+plugin-management lifecycle. It requires:
+
+| Variable | Meaning |
+| --- | --- |
+| `BB_WORK_TOGETHER_COORDINATOR_ORIGIN` | Absolute HTTP(S) origin of the Work Together coordinator. |
+| `BB_WORK_TOGETHER_CELL_TOOL_SECRET` | Shared cell-tool credential, at least 32 UTF-8 bytes. |
+
+The runtime sends cell-tool contract header version `1`. `/readyz` exposes
+`checks.vespynRuntime`; readiness in Work Together mode requires the runtime to
+be running with that exact version. Local-owner mode reports the check as not
+applicable.
+
 Plugin state lives under the data dir:
 
 ```
