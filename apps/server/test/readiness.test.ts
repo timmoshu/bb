@@ -121,6 +121,20 @@ describe("computeReadiness (pure matrix)", () => {
     });
   });
 
+  it("work-together is not ready with the wrong cell-tool contract version", () => {
+    const report = computeReadiness({
+      mode: "work-together",
+      sqliteMigrationsAtHead: true,
+      workTogetherRuntimeComposed: true,
+      membershipPortReachable: true,
+      vespynRuntime: {
+        running: true,
+        cellToolContractVersion: 2,
+      },
+    });
+    expect(report.ready).toBe(false);
+  });
+
   it("work-together is not ready when the membership port is unreachable", () => {
     const report = computeReadiness({
       mode: "work-together",

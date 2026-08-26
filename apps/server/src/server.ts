@@ -28,6 +28,7 @@ import {
   createPluginService,
   type PluginService,
 } from "./services/plugins/plugin-service.js";
+import { WORK_TOGETHER_CELL_TOOL_CONTRACT_VERSION } from "./services/plugins/builtin-registry.js";
 import { setPluginAgentContributions } from "./services/plugins/plugin-agent-contributions.js";
 import { setPluginThreadEventEmitter } from "./services/plugins/plugin-thread-events.js";
 import { registerInternalEventRoutes } from "./internal/events.js";
@@ -522,7 +523,7 @@ export function createApp(
       (() =>
         pluginService.workTogetherRuntimeReadiness() ?? {
           running: false,
-          cellToolContractVersion: 1,
+          cellToolContractVersion: WORK_TOGETHER_CELL_TOOL_CONTRACT_VERSION,
         }),
   });
   // Bridge the thread lifecycle seams to this service's plugins (§4.5).

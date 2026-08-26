@@ -1303,6 +1303,25 @@ describe("server-owned Work Together runtime", () => {
     expect(service.list()).toEqual([]);
   });
 
+  it("fails readiness closed when the real package configuration is missing", async () => {
+    delete process.env.BB_WORK_TOGETHER_COORDINATOR_ORIGIN;
+    delete process.env.BB_WORK_TOGETHER_CELL_TOOL_SECRET;
+    service = createService({
+      db,
+      dataDir: join(workDir, "data"),
+      includeBuiltin: false,
+      principalMode: "work-together",
+    });
+
+    await service.start();
+
+    expect(service.workTogetherRuntimeReadiness()).toEqual({
+      running: false,
+      cellToolContractVersion: 1,
+    });
+    expect(service.list()).toEqual([]);
+  });
+
   it("loads the required runtime in Work Together mode without an installed row", async () => {
     const rootDir = await writeNamedBuiltinFixture(workDir, "vespyn-runtime");
     service = createService({
@@ -1376,6 +1395,15 @@ describe("server-owned Work Together runtime", () => {
     await service.start();
 
     expect(getInstalledPluginRegistration(db, "vespyn-agent-toolkit")).toBeDefined();
+    expect(service.list()).toMatchObject([
+      { id: "vespyn-agent-toolkit", status: "incompatible" },
+    ]);
+    expect(
+      service
+        .listSkillRootContributions()
+        .some((entry) => entry.pluginId === "vespyn-agent-toolkit"),
+    ).toBe(false);
+    await service.reload("vespyn-agent-toolkit");
     expect(service.list()).toMatchObject([
       { id: "vespyn-agent-toolkit", status: "incompatible" },
     ]);

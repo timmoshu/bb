@@ -1024,6 +1024,17 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
     // Refresh identity first so even a disabled/incompatible/errored plugin
     // keeps its name, icon, and logo in the list.
     await populateIdentity(row);
+    if (
+      deps.principalMode === "work-together" &&
+      WORK_TOGETHER_OBSOLETE_PLUGIN_IDS.some((id) => id === row.id)
+    ) {
+      setStatus(
+        row.id,
+        "incompatible",
+        "obsolete in Work Together mode; capability is server-owned",
+      );
+      return;
+    }
     if (!row.enabled) {
       setStatus(row.id, "disabled");
       return;
@@ -1404,18 +1415,6 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
     );
     for (const row of rows) {
       if (loaded.has(row.id)) continue;
-      if (
-        deps.principalMode === "work-together" &&
-        WORK_TOGETHER_OBSOLETE_PLUGIN_IDS.some((id) => id === row.id)
-      ) {
-        await populateIdentity(row);
-        setStatus(
-          row.id,
-          "incompatible",
-          "obsolete in Work Together mode; capability is server-owned",
-        );
-        continue;
-      }
       await withLifecycleLock(row.id, () => loadOne(row));
     }
   }
