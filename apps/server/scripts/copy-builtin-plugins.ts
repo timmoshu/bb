@@ -10,7 +10,7 @@ import { isPluginOwnedIconPath, pluginPackageJsonSchema } from "@bb/domain";
 import { z } from "zod";
 import {
   BUILTIN_PLUGINS_DIRECTORY_NAME,
-  BUNDLED_PLUGINS,
+  PACKAGED_PLUGINS,
   resolveBuiltinPluginRootPathForModuleDir,
   type BundledPluginDefinition,
 } from "../src/services/plugins/builtin-registry.js";
@@ -164,7 +164,7 @@ export async function copyBuiltinPlugins(args: {
 }): Promise<void> {
   const resolvedSourceModuleDir = args.sourceModuleDir ?? sourceModuleDir;
   const resolvedTargetRoot = args.targetRoot ?? targetRoot;
-  const plugins = args.plugins ?? BUNDLED_PLUGINS;
+  const plugins = args.plugins ?? PACKAGED_PLUGINS;
   const build = args.build ?? true;
 
   await rm(resolvedTargetRoot, { recursive: true, force: true });

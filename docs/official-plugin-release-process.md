@@ -2,16 +2,23 @@
 
 Official plugins ship **bundled inside the BB app**. There is no separate
 publish pipeline: at packaging time, `apps/server/scripts/copy-builtin-plugins.ts`
-builds every plugin declared in `BUNDLED_PLUGINS`
+builds every package declared in `PACKAGED_PLUGINS`
 (`apps/server/src/services/plugins/builtin-registry.ts`) and copies each
 prebuilt runtime layout into `<server dist>/builtin-plugins/<name>`. The app in
 Extensions → Plugins → Browse installs official plugins from that local bundled
 copy; no network is involved.
 
-Every bundled plugin lives in `plugins/<name>`. The directory does not record
-the install policy. `autoInstall` in the registry does: `BUILTIN_PLUGINS`
-entries reconcile automatically, and `OFFICIAL_PLUGINS` entries stay store-only
-until a user installs them.
+Every packaged plugin-shaped runtime lives in `plugins/<name>`. Its registry
+class owns its lifecycle:
+
+- `BUILTIN_PLUGINS` reconcile automatically as user-visible installed plugins.
+- `OFFICIAL_PLUGINS` stay in the local store until a user installs them.
+- Server-owned packages such as `WORK_TOGETHER_RUNTIME_PLUGIN` are copied with
+  the release but never enter the catalog or installed-plugin state. BB loads
+  that runtime directly when its server profile requires it.
+
+`BUNDLED_PLUGINS` is the user-visible builtin and official union;
+`PACKAGED_PLUGINS` additionally contains hidden server-owned runtime packages.
 
 The official plugins are:
 
@@ -34,6 +41,20 @@ The official plugins are:
    the next server start.
 
 Never check in `plugins/*/dist`; packaging builds it.
+
+## Releasing the Work Together Vespyn runtime
+
+`plugins/vespyn-runtime` is required BB backend infrastructure for
+`BB_PRINCIPAL_MODE=work-together`. It is not installed, removed, enabled, or
+configured through plugin management. Its runtime configuration comes from
+`BB_WORK_TOGETHER_COORDINATOR_ORIGIN` and
+`BB_WORK_TOGETHER_CELL_TOOL_SECRET`; `/readyz` reports
+`checks.vespynRuntime` and requires cell-tool contract version `1`.
+
+Deploy a BB release containing the compatible runtime before deploying a Work
+Together release that requires that contract. Reverse that order for rollback.
+Do not restore the former `work-together` or `vespyn-agent-toolkit` path-plugin
+delivery.
 
 ## Adding a new official plugin
 

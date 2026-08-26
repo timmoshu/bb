@@ -31,6 +31,13 @@
 
 - Any new public plugin API member (a `@get-bb/plugin-sdk/app` export, an `app.slots.*` method, or a `BbPluginApi` property) ships with an `experimental_` name prefix and an entry in [docs/api_to_audit.md](docs/api_to_audit.md) describing what it does and what to audit before stabilizing. Dropping the prefix is the deliberate stabilization step: audit the entry, rename project-wide, and remove it from the doc in the same change.
 
+## Server-Owned Cell Runtime
+
+- The Vespyn runtime is BB backend infrastructure, not a user-managed plugin. Package `plugins/vespyn-runtime` with BB through `PACKAGED_PLUGINS`, load it only for `BB_PRINCIPAL_MODE=work-together`, and keep it out of installed-plugin rows, marketplaces, plugin settings, and plugin list/install/remove/config surfaces.
+- A Work Together goal-space owner is a product-domain principal, not a BB backend operator. Do not widen signed Work Together owner/member/agent HTTP allowlists to grant plugin administration or other host-level authority.
+- BB owns Vespyn runtime packaging, activation, configuration, and readiness. Work Together owns the versioned `/cell-tools/v1/*` HTTP commands and durable product-state mutations. Roll out BB before Work Together; roll back Work Together before BB.
+- Do not restore the obsolete `work-together` or `vespyn-agent-toolkit` path-plugin delivery. In Work Together mode those ids remain incompatible and must not load beside the server-owned runtime.
+
 ## Data Access
 
 - Do not load all rows and filter in JavaScript when a targeted query with `WHERE` or `JOIN` is possible.

@@ -70,6 +70,7 @@ describe("computeReadiness (pure matrix)", () => {
     expect(report.ready).toBe(true);
     expect(report.checks.principalPolicyLoaded).toBe(true);
     expect(report.checks.membershipPortReachable).toBe("not-applicable");
+    expect(report.checks.vespynRuntime).toEqual({ applicable: false });
   });
 
   it("local-owner is not ready when migrations are not at head", () => {
@@ -88,9 +89,51 @@ describe("computeReadiness (pure matrix)", () => {
       sqliteMigrationsAtHead: true,
       workTogetherRuntimeComposed: true,
       membershipPortReachable: true,
+      vespynRuntime: {
+        running: true,
+        cellToolContractVersion: 1,
+      },
     });
     expect(report.ready).toBe(true);
     expect(report.checks.principalPolicyLoaded).toBe(true);
+    expect(report.checks.vespynRuntime).toEqual({
+      applicable: true,
+      running: true,
+      cellToolContractVersion: 1,
+    });
+  });
+
+  it("work-together is not ready without the server-owned runtime", () => {
+    const report = computeReadiness({
+      mode: "work-together",
+      sqliteMigrationsAtHead: true,
+      workTogetherRuntimeComposed: true,
+      membershipPortReachable: true,
+      vespynRuntime: {
+        running: false,
+        cellToolContractVersion: 1,
+      },
+    });
+    expect(report.ready).toBe(false);
+    expect(report.checks.vespynRuntime).toEqual({
+      applicable: true,
+      running: false,
+      cellToolContractVersion: 1,
+    });
+  });
+
+  it("work-together is not ready with the wrong cell-tool contract version", () => {
+    const report = computeReadiness({
+      mode: "work-together",
+      sqliteMigrationsAtHead: true,
+      workTogetherRuntimeComposed: true,
+      membershipPortReachable: true,
+      vespynRuntime: {
+        running: true,
+        cellToolContractVersion: 2,
+      },
+    });
+    expect(report.ready).toBe(false);
   });
 
   it("work-together is not ready when the membership port is unreachable", () => {
@@ -167,6 +210,7 @@ describe("evaluateReadiness (I/O)", () => {
       });
       expect(report.checks.sqliteMigrationsAtHead).toBe(true);
       expect(report.checks.membershipPortReachable).toBe("not-applicable");
+      expect(report.checks.vespynRuntime).toEqual({ applicable: false });
       expect(report.ready).toBe(true);
     } finally {
       await harness.cleanup();
@@ -194,6 +238,10 @@ describe("evaluateReadiness (I/O)", () => {
         db: harness.deps.db,
         principalMode: "work-together",
         probeMembershipReachable: async () => true,
+        probeWorkTogetherRuntime: () => ({
+          running: true,
+          cellToolContractVersion: 1,
+        }),
       });
       expect(report.checks.membershipPortReachable).toBe(true);
       expect(report.checks.principalPolicyLoaded).toBe(true);
@@ -252,12 +300,14 @@ describe("GET /readyz route", () => {
           sqliteMigrationsAtHead: boolean;
           principalPolicyLoaded: boolean;
           membershipPortReachable: unknown;
+          vespynRuntime: unknown;
         };
       };
       expect(body.ready).toBe(true);
       expect(body.mode).toBe("local-owner");
       expect(body.checks.sqliteMigrationsAtHead).toBe(true);
       expect(body.checks.membershipPortReachable).toBe("not-applicable");
+      expect(body.checks.vespynRuntime).toEqual({ applicable: false });
     } finally {
       await server.closeWebSockets();
       await harness.cleanup();
@@ -268,17 +318,31 @@ describe("GET /readyz route", () => {
     const harness = await createTestAppHarness();
     const server = createApp(harness.deps, {
       principalMode: "work-together",
-      readiness: { probeMembershipReachable: async () => true },
+      readiness: {
+        probeMembershipReachable: async () => true,
+        probeWorkTogetherRuntime: () => ({
+          running: true,
+          cellToolContractVersion: 1,
+        }),
+      },
     });
     try {
       const response = await server.app.request("/readyz");
       expect(response.status).toBe(200);
       const body = (await response.json()) as {
         ready: boolean;
-        checks: { membershipPortReachable: unknown };
+        checks: {
+          membershipPortReachable: unknown;
+          vespynRuntime: unknown;
+        };
       };
       expect(body.ready).toBe(true);
       expect(body.checks.membershipPortReachable).toBe(true);
+      expect(body.checks.vespynRuntime).toEqual({
+        applicable: true,
+        running: true,
+        cellToolContractVersion: 1,
+      });
     } finally {
       await server.closeWebSockets();
       await harness.cleanup();

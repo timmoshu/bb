@@ -15,7 +15,6 @@ import {
   listInstalledPlugins,
   prunePluginSchedules,
   upsertPluginSchedule,
-  type InstalledPluginRow,
 } from "@bb/db";
 import {
   LOCAL_OWNER_THREAD_READ_PRINCIPAL_ID,
@@ -47,12 +46,14 @@ import { InternalPrincipalAuthorityError } from "../../auth/internal-principal-a
 import type {
   LoadedPlugin,
   PluginHandlerStats,
+  PluginLoadTarget,
   PluginRuntimeStatus,
   PluginServiceDeps,
   PluginWireLookup,
   ServiceRuntime,
 } from "./plugin-service-internal.js";
 import { runEventLoopWork } from "../system/event-loop-work.js";
+import { WORK_TOGETHER_OBSOLETE_PLUGIN_IDS } from "./builtin-registry.js";
 
 /**
  * Plugin server bundles keep `@get-bb/plugin-sdk` external (see @bb/plugin-build),
@@ -817,7 +818,7 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
     }
   }
 
-  function builtinName(row: InstalledPluginRow): string | null {
+  function builtinName(row: PluginLoadTarget): string | null {
     return row.sourceKind === "builtin" ? row.sourceBuiltinName : null;
   }
 
@@ -844,7 +845,7 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
   }
 
   async function packagedBuiltinArtifactProblem(
-    row: InstalledPluginRow,
+    row: PluginLoadTarget,
     manifest: PluginManifest,
   ): Promise<string | null> {
     const kind = sourceKind(row.source);
@@ -911,7 +912,7 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
    * requires the exact SDK version, not just a matching major.
    */
   async function resolveServerEntry(
-    row: InstalledPluginRow,
+    row: PluginLoadTarget,
     manifest: PluginManifest,
   ): Promise<string> {
     if (
@@ -956,7 +957,7 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
    * incompatible metadata is surfaced without rewriting cached bytes.
    */
   async function loadAppBundleCandidate(
-    row: InstalledPluginRow,
+    row: PluginLoadTarget,
     manifest: PluginManifest,
   ): Promise<{
     snapshot: PluginAppBundleSnapshot;
@@ -1007,7 +1008,7 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
   // independent of whether the plugin loads. A plugin whose manifest can't be
   // read (missing/corrupt) simply has no identity to show — it falls back to
   // its id and the generic glyph.
-  async function populateIdentity(row: InstalledPluginRow): Promise<void> {
+  async function populateIdentity(row: PluginLoadTarget): Promise<void> {
     try {
       const manifest = await readPluginManifest(row.rootDir);
       identities.set(row.id, {
@@ -1019,10 +1020,21 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
     }
   }
 
-  async function loadOne(row: InstalledPluginRow): Promise<void> {
+  async function loadOne(row: PluginLoadTarget): Promise<void> {
     // Refresh identity first so even a disabled/incompatible/errored plugin
     // keeps its name, icon, and logo in the list.
     await populateIdentity(row);
+    if (
+      deps.principalMode === "work-together" &&
+      WORK_TOGETHER_OBSOLETE_PLUGIN_IDS.some((id) => id === row.id)
+    ) {
+      setStatus(
+        row.id,
+        "incompatible",
+        "obsolete in Work Together mode; capability is server-owned",
+      );
+      return;
+    }
     if (!row.enabled) {
       setStatus(row.id, "disabled");
       return;

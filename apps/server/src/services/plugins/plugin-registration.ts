@@ -19,8 +19,10 @@ import {
 import {
   BUNDLED_PLUGINS,
   builtinPluginSource,
+  WORK_TOGETHER_OBSOLETE_PLUGIN_IDS,
   WORK_TOGETHER_BUILTIN_ENABLED_RECONCILE_ID,
   WORK_TOGETHER_BUILTIN_ENABLED_RECONCILE_NAMES,
+  WORK_TOGETHER_RUNTIME_PLUGIN,
   workTogetherBuiltinDefaultsMarkerApplied,
   workTogetherBuiltinDefaultsMarkerPath,
   type BundledPluginRegistration,
@@ -94,10 +96,24 @@ export function createPluginRegistration(context: PluginRegistrationContext) {
 
   function refuseBuiltinShadow(pluginId: string): void {
     const bundledName = bundledPluginNamesById.get(pluginId);
-    if (bundledName === undefined) return;
-    throw new Error(
-      `install refused: plugin id "${pluginId}" is reserved by the bundled plugin "${bundledName}"; install "builtin:${bundledName}" instead`,
-    );
+    if (bundledName !== undefined) {
+      throw new Error(
+        `install refused: plugin id "${pluginId}" is reserved by the bundled plugin "${bundledName}"; install "builtin:${bundledName}" instead`,
+      );
+    }
+    if (pluginId === WORK_TOGETHER_RUNTIME_PLUGIN.pluginId) {
+      throw new Error(
+        `install refused: plugin id "${pluginId}" is reserved by a server-owned package`,
+      );
+    }
+    if (
+      deps.principalMode === "work-together" &&
+      WORK_TOGETHER_OBSOLETE_PLUGIN_IDS.some((id) => id === pluginId)
+    ) {
+      throw new Error(
+        `install refused: plugin id "${pluginId}" is obsolete in Work Together mode`,
+      );
+    }
   }
 
   function emptyPluginUpdateState() {

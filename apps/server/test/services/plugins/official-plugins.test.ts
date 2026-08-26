@@ -17,8 +17,11 @@ import {
 } from "../../../src/services/plugins/plugin-service.js";
 import {
   BUNDLED_PLUGINS,
+  PACKAGED_PLUGINS,
   PLUGIN_CATALOG_CATEGORIES,
+  WORK_TOGETHER_RUNTIME_PLUGIN,
   listBundledPluginRegistrations,
+  resolveWorkTogetherRuntimePluginRegistration,
   type BundledPluginRegistration,
 } from "../../../src/services/plugins/builtin-registry.js";
 import { readPluginManifest } from "../../../src/services/plugins/manifest.js";
@@ -75,6 +78,16 @@ function createService(args: {
 }
 
 describe("official plugin registry invariants", () => {
+  it("packages the server-owned Vespyn runtime without publishing it in the plugin catalog", () => {
+    expect(PACKAGED_PLUGINS).toContainEqual(WORK_TOGETHER_RUNTIME_PLUGIN);
+    expect(BUNDLED_PLUGINS).not.toContainEqual(WORK_TOGETHER_RUNTIME_PLUGIN);
+    expect(
+      BUNDLED_PLUGINS.some(
+        (plugin) => plugin.pluginId === WORK_TOGETHER_RUNTIME_PLUGIN.pluginId,
+      ),
+    ).toBe(false);
+  });
+
   it("declares the plugin id each bundled manifest actually derives", async () => {
     for (const registration of listBundledPluginRegistrations()) {
       const manifest = await readPluginManifest(registration.rootDir);
@@ -82,6 +95,13 @@ describe("official plugin registry invariants", () => {
         registration.pluginId,
       );
     }
+  });
+
+  it("declares the plugin id the server-owned runtime manifest actually derives", async () => {
+    const registration = resolveWorkTogetherRuntimePluginRegistration();
+    const manifest = await readPluginManifest(registration.rootDir);
+    expect(derivePluginId(manifest.packageName)).toBe(registration.pluginId);
+    expect(registration.pluginId).toBe(WORK_TOGETHER_RUNTIME_PLUGIN.pluginId);
   });
 
   it("assigns every bundled plugin to one curated store category", () => {

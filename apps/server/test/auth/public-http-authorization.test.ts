@@ -1120,10 +1120,17 @@ describe("createApp public HTTP authorization boundary", () => {
       );
       expect(ownerHosts.status).toBe(404);
 
+      const ownerPlugins = await signedRequest(
+        "GET",
+        "/api/v1/plugins",
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa10",
+      );
+      expect(ownerPlugins.status).toBe(404);
+
       const ownerUnknown = await signedRequest(
         "GET",
         "/api/v1/definitely-missing",
-        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9",
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa11",
       );
       expect(ownerUnknown.status).toBe(404);
     } finally {
