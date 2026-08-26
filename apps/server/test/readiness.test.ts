@@ -70,6 +70,7 @@ describe("computeReadiness (pure matrix)", () => {
     expect(report.ready).toBe(true);
     expect(report.checks.principalPolicyLoaded).toBe(true);
     expect(report.checks.membershipPortReachable).toBe("not-applicable");
+    expect(report.checks.vespynRuntime).toEqual({ applicable: false });
   });
 
   it("local-owner is not ready when migrations are not at head", () => {
@@ -209,6 +210,7 @@ describe("evaluateReadiness (I/O)", () => {
       });
       expect(report.checks.sqliteMigrationsAtHead).toBe(true);
       expect(report.checks.membershipPortReachable).toBe("not-applicable");
+      expect(report.checks.vespynRuntime).toEqual({ applicable: false });
       expect(report.ready).toBe(true);
     } finally {
       await harness.cleanup();
@@ -298,12 +300,14 @@ describe("GET /readyz route", () => {
           sqliteMigrationsAtHead: boolean;
           principalPolicyLoaded: boolean;
           membershipPortReachable: unknown;
+          vespynRuntime: unknown;
         };
       };
       expect(body.ready).toBe(true);
       expect(body.mode).toBe("local-owner");
       expect(body.checks.sqliteMigrationsAtHead).toBe(true);
       expect(body.checks.membershipPortReachable).toBe("not-applicable");
+      expect(body.checks.vespynRuntime).toEqual({ applicable: false });
     } finally {
       await server.closeWebSockets();
       await harness.cleanup();

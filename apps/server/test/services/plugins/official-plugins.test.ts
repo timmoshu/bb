@@ -21,6 +21,7 @@ import {
   PLUGIN_CATALOG_CATEGORIES,
   WORK_TOGETHER_RUNTIME_PLUGIN,
   listBundledPluginRegistrations,
+  resolveWorkTogetherRuntimePluginRegistration,
   type BundledPluginRegistration,
 } from "../../../src/services/plugins/builtin-registry.js";
 import { readPluginManifest } from "../../../src/services/plugins/manifest.js";
@@ -94,6 +95,13 @@ describe("official plugin registry invariants", () => {
         registration.pluginId,
       );
     }
+  });
+
+  it("declares the plugin id the server-owned runtime manifest actually derives", async () => {
+    const registration = resolveWorkTogetherRuntimePluginRegistration();
+    const manifest = await readPluginManifest(registration.rootDir);
+    expect(derivePluginId(manifest.packageName)).toBe(registration.pluginId);
+    expect(registration.pluginId).toBe(WORK_TOGETHER_RUNTIME_PLUGIN.pluginId);
   });
 
   it("assigns every bundled plugin to one curated store category", () => {

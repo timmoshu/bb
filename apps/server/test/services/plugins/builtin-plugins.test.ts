@@ -1367,15 +1367,27 @@ describe("server-owned Work Together runtime", () => {
   });
 
   it("refuses obsolete Work Together extensions without deleting their rows", async () => {
-    const rootDir = await writeNamedBuiltinFixture(
+    const toolkitRoot = await writeNamedBuiltinFixture(
       workDir,
       "vespyn-agent-toolkit",
+    );
+    const workTogetherRoot = await writeNamedBuiltinFixture(
+      workDir,
+      "work-together",
     );
     seedInstalledBuiltin({
       db,
       name: "vespyn-agent-toolkit",
       pluginId: "vespyn-agent-toolkit",
-      rootDir,
+      rootDir: toolkitRoot,
+      enabled: true,
+      source: "path",
+    });
+    seedInstalledBuiltin({
+      db,
+      name: "work-together",
+      pluginId: "work-together",
+      rootDir: workTogetherRoot,
       enabled: true,
       source: "path",
     });
@@ -1395,24 +1407,51 @@ describe("server-owned Work Together runtime", () => {
     await service.start();
 
     expect(getInstalledPluginRegistration(db, "vespyn-agent-toolkit")).toBeDefined();
+    expect(getInstalledPluginRegistration(db, "work-together")).toBeDefined();
     expect(service.list()).toMatchObject([
       { id: "vespyn-agent-toolkit", status: "incompatible" },
+      { id: "work-together", status: "incompatible" },
     ]);
     expect(
       service
         .listSkillRootContributions()
-        .some((entry) => entry.pluginId === "vespyn-agent-toolkit"),
+        .some((entry) =>
+          entry.pluginId === "vespyn-agent-toolkit" ||
+          entry.pluginId === "work-together",
+        ),
     ).toBe(false);
     await service.reload("vespyn-agent-toolkit");
+    await service.reload("work-together");
     expect(service.list()).toMatchObject([
       { id: "vespyn-agent-toolkit", status: "incompatible" },
+      { id: "work-together", status: "incompatible" },
     ]);
     expect(
       service
         .listSkillRootContributions()
-        .some((entry) => entry.pluginId === "vespyn-agent-toolkit"),
+        .some((entry) =>
+          entry.pluginId === "vespyn-agent-toolkit" ||
+          entry.pluginId === "work-together",
+        ),
     ).toBe(false);
-    await expect(service.installPath(rootDir)).rejects.toThrow(
+    await service.setEnabled("vespyn-agent-toolkit", true);
+    await service.setEnabled("work-together", true);
+    expect(service.list()).toMatchObject([
+      { id: "vespyn-agent-toolkit", status: "incompatible" },
+      { id: "work-together", status: "incompatible" },
+    ]);
+    expect(
+      service
+        .listSkillRootContributions()
+        .some((entry) =>
+          entry.pluginId === "vespyn-agent-toolkit" ||
+          entry.pluginId === "work-together",
+        ),
+    ).toBe(false);
+    await expect(service.installPath(toolkitRoot)).rejects.toThrow(
+      /obsolete in Work Together mode/,
+    );
+    await expect(service.installPath(workTogetherRoot)).rejects.toThrow(
       /obsolete in Work Together mode/,
     );
   });
