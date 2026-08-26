@@ -22,6 +22,18 @@ export interface BundledPluginRegistration extends BundledPluginDefinition {
   rootDir: string;
 }
 
+export interface ServerOwnedPackagedPluginDefinition {
+  /** Directory name under `plugins/` and packaged `builtin-plugins/`. */
+  name: string;
+  /** Reserved plugin-engine identity; never persisted as an installed plugin. */
+  pluginId: string;
+}
+
+export interface ServerOwnedPackagedPluginRegistration
+  extends ServerOwnedPackagedPluginDefinition {
+  rootDir: string;
+}
+
 interface ResolveBuiltinPluginRootPathArgs {
   moduleDir: string;
   name: string;
@@ -197,6 +209,29 @@ export const BUNDLED_PLUGINS: readonly BundledPluginDefinition[] = [
   ...OFFICIAL_PLUGINS,
 ];
 
+/**
+ * Required only inside Work Together cells. It uses the plugin execution
+ * engine without becoming user-managed plugin state.
+ */
+export const WORK_TOGETHER_RUNTIME_PLUGIN = {
+  name: "vespyn-runtime",
+  pluginId: "vespyn-runtime",
+} as const satisfies ServerOwnedPackagedPluginDefinition;
+
+export const WORK_TOGETHER_CELL_TOOL_CONTRACT_VERSION = 1 as const;
+
+/** Obsolete extension ids that must not execute beside the owned runtime. */
+export const WORK_TOGETHER_OBSOLETE_PLUGIN_IDS = [
+  "work-together",
+  "vespyn-agent-toolkit",
+] as const;
+
+/** Every plugin-shaped package copied into a BB distribution. */
+export const PACKAGED_PLUGINS: readonly ServerOwnedPackagedPluginDefinition[] = [
+  ...BUNDLED_PLUGINS,
+  WORK_TOGETHER_RUNTIME_PLUGIN,
+];
+
 export const BUILTIN_PLUGIN_NAMES = BUILTIN_PLUGINS.map(
   (plugin) => plugin.name,
 );
@@ -258,4 +293,11 @@ export function listBundledPluginRegistrations(): BundledPluginRegistration[] {
     ...plugin,
     rootDir: resolveBuiltinPluginRootPath(plugin.name),
   }));
+}
+
+export function resolveWorkTogetherRuntimePluginRegistration(): ServerOwnedPackagedPluginRegistration {
+  return {
+    ...WORK_TOGETHER_RUNTIME_PLUGIN,
+    rootDir: resolveBuiltinPluginRootPath(WORK_TOGETHER_RUNTIME_PLUGIN.name),
+  };
 }

@@ -17,7 +17,9 @@ import {
 } from "../../../src/services/plugins/plugin-service.js";
 import {
   BUNDLED_PLUGINS,
+  PACKAGED_PLUGINS,
   PLUGIN_CATALOG_CATEGORIES,
+  WORK_TOGETHER_RUNTIME_PLUGIN,
   listBundledPluginRegistrations,
   type BundledPluginRegistration,
 } from "../../../src/services/plugins/builtin-registry.js";
@@ -75,6 +77,16 @@ function createService(args: {
 }
 
 describe("official plugin registry invariants", () => {
+  it("packages the server-owned Vespyn runtime without publishing it in the plugin catalog", () => {
+    expect(PACKAGED_PLUGINS).toContainEqual(WORK_TOGETHER_RUNTIME_PLUGIN);
+    expect(BUNDLED_PLUGINS).not.toContainEqual(WORK_TOGETHER_RUNTIME_PLUGIN);
+    expect(
+      BUNDLED_PLUGINS.some(
+        (plugin) => plugin.pluginId === WORK_TOGETHER_RUNTIME_PLUGIN.pluginId,
+      ),
+    ).toBe(false);
+  });
+
   it("declares the plugin id each bundled manifest actually derives", async () => {
     for (const registration of listBundledPluginRegistrations()) {
       const manifest = await readPluginManifest(registration.rootDir);

@@ -1,0 +1,55 @@
+{
+  "name": "bb-plugin-vespyn-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Portable Vespyn engineering workflows and Work Together cell tools for standard BB projects.",
+  "license": "MIT",
+  "homepage": "https://github.com/get-bb/bb#readme",
+  "bugs": {
+    "url": "https://github.com/get-bb/bb/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/get-bb/bb.git",
+    "directory": "plugins/vespyn-runtime"
+  },
+  "files": [
+    "dist",
+    "src",
+    "skills",
+    "README.md"
+  ],
+  "engines": {
+    "bb": ">=0.0",
+    "bbPluginSdk": ">=0.4.3"
+  },
+  "bb": {
+    "name": "Vespyn Runtime",
+    "description": "Portable Vespyn engineering workflows and Work Together cell tools for standard BB projects.",
+    "branding": {
+      "icon": "Zap"
+    },
+    "server": "./src/server.ts",
+    "skills": [
+      "skills"
+    ]
+  },
+  "keywords": [
+    "bb-plugin"
+  ],
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "workspace:*",
+    "@types/node": "^22.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-7": "npm:typescript@^7.0.2",
+    "vitest": "^4.1.1"
+  }
+}
