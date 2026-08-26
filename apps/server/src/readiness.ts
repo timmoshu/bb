@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
 import { readSqliteMigrationReadiness, type DbConnection } from "@bb/db";
+import { WORK_TOGETHER_CELL_TOOL_CONTRACT_VERSION } from "./services/plugins/builtin-registry.js";
 
 /**
  * Loopback readiness endpoint for the composed cell.
@@ -31,9 +32,24 @@ export interface ReadinessDeps {
   readonly probeMembershipReachable?: MembershipReachabilityProbe;
   /** Bound so a hung membership port cannot hang the readiness request. */
   readonly membershipProbeTimeoutMs?: number;
+  /** Local server-owned runtime state; never performs a coordinator request. */
+  readonly probeWorkTogetherRuntime?: () => WorkTogetherRuntimeProbeResult;
 }
 
 export type MembershipReadinessState = boolean | "not-applicable";
+
+export type WorkTogetherRuntimeProbeResult = {
+  readonly running: boolean;
+  readonly cellToolContractVersion: number;
+};
+
+export type VespynRuntimeReadinessState =
+  | { readonly applicable: false }
+  | {
+      readonly applicable: true;
+      readonly running: boolean;
+      readonly cellToolContractVersion: number;
+    };
 
 export interface ReadinessReport {
   readonly ready: boolean;
@@ -42,6 +58,7 @@ export interface ReadinessReport {
     readonly sqliteMigrationsAtHead: boolean;
     readonly principalPolicyLoaded: boolean;
     readonly membershipPortReachable: MembershipReadinessState;
+    readonly vespynRuntime: VespynRuntimeReadinessState;
   };
 }
 
@@ -51,6 +68,7 @@ export interface ReadinessInputs {
   /** True in local-owner (stock policy always present) or work-together with a composed runtime. */
   readonly workTogetherRuntimeComposed: boolean;
   readonly membershipPortReachable: MembershipReadinessState;
+  readonly vespynRuntime?: WorkTogetherRuntimeProbeResult;
 }
 
 const DEFAULT_MEMBERSHIP_PROBE_TIMEOUT_MS = 2_000;
@@ -63,10 +81,25 @@ export function computeReadiness(inputs: ReadinessInputs): ReadinessReport {
   const principalPolicyLoaded =
     inputs.mode === "local-owner" || inputs.workTogetherRuntimeComposed;
 
+  const vespynRuntime: VespynRuntimeReadinessState =
+    inputs.mode === "local-owner"
+      ? { applicable: false }
+      : {
+          applicable: true,
+          running: inputs.vespynRuntime?.running ?? false,
+          cellToolContractVersion:
+            inputs.vespynRuntime?.cellToolContractVersion ??
+            WORK_TOGETHER_CELL_TOOL_CONTRACT_VERSION,
+        };
+
   const ready =
     inputs.sqliteMigrationsAtHead &&
     principalPolicyLoaded &&
-    inputs.membershipPortReachable !== false;
+    inputs.membershipPortReachable !== false &&
+    (vespynRuntime.applicable === false ||
+      (vespynRuntime.running &&
+        vespynRuntime.cellToolContractVersion ===
+          WORK_TOGETHER_CELL_TOOL_CONTRACT_VERSION));
 
   return {
     ready,
@@ -75,6 +108,7 @@ export function computeReadiness(inputs: ReadinessInputs): ReadinessReport {
       sqliteMigrationsAtHead: inputs.sqliteMigrationsAtHead,
       principalPolicyLoaded,
       membershipPortReachable: inputs.membershipPortReachable,
+      vespynRuntime,
     },
   };
 }
@@ -125,11 +159,21 @@ export async function evaluateReadiness(
     deps.principalMode === "work-together" &&
     deps.probeMembershipReachable !== undefined;
 
+  let vespynRuntime: WorkTogetherRuntimeProbeResult | undefined;
+  if (deps.principalMode === "work-together") {
+    try {
+      vespynRuntime = deps.probeWorkTogetherRuntime?.();
+    } catch {
+      vespynRuntime = undefined;
+    }
+  }
+
   return computeReadiness({
     mode: deps.principalMode,
     sqliteMigrationsAtHead,
     workTogetherRuntimeComposed,
     membershipPortReachable,
+    ...(vespynRuntime === undefined ? {} : { vespynRuntime }),
   });
 }
 

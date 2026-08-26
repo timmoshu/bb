@@ -46,7 +46,10 @@ import {
 } from "./auth/internal-execution-sessions.js";
 import { createInternalPrincipalAuthority } from "./auth/internal-principal-authority.js";
 import { createLocalOwnerPrincipalPolicy } from "./auth/local-owner-adapter.js";
-import { registerReadinessRoute } from "./readiness.js";
+import {
+  registerReadinessRoute,
+  type WorkTogetherRuntimeProbeResult,
+} from "./readiness.js";
 import type { PrincipalPolicy } from "./auth/principal-policy.js";
 import { createPublicHttpAuthorizationMiddleware } from "./auth/public-http-authorization.js";
 import {
@@ -156,6 +159,7 @@ interface CreateAppOptions {
    */
   readiness?: {
     readonly probeMembershipReachable?: () => Promise<boolean>;
+    readonly probeWorkTogetherRuntime?: () => WorkTogetherRuntimeProbeResult;
   };
   slowApiRequestLogThresholdMs?: number;
   staticDir?: string;
@@ -399,13 +403,6 @@ export function createApp(
   });
   app.onError((error) => errorToResponse(error, deps.logger));
   app.get("/health", (context) => context.json({ ok: true }));
-  registerReadinessRoute(app, {
-    db: deps.db,
-    principalMode,
-    ...(options?.readiness?.probeMembershipReachable !== undefined
-      ? { probeMembershipReachable: options.readiness.probeMembershipReachable }
-      : {}),
-  });
   app.get("/install.sh", async (context) => {
     const script = await readFile(INSTALL_MACHINE_SCRIPT_PATH);
     return new Response(script, {
@@ -512,6 +509,21 @@ export function createApp(
       authority: internalPrincipalAuthority,
       sessions: internalExecutionSessions,
     },
+    principalMode,
+  });
+  registerReadinessRoute(app, {
+    db: deps.db,
+    principalMode,
+    ...(options?.readiness?.probeMembershipReachable !== undefined
+      ? { probeMembershipReachable: options.readiness.probeMembershipReachable }
+      : {}),
+    probeWorkTogetherRuntime:
+      options?.readiness?.probeWorkTogetherRuntime ??
+      (() =>
+        pluginService.workTogetherRuntimeReadiness() ?? {
+          running: false,
+          cellToolContractVersion: 1,
+        }),
   });
   // Bridge the thread lifecycle seams to this service's plugins (§4.5).
   setPluginThreadEventEmitter(pluginService.events);

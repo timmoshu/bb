@@ -1,4 +1,4 @@
-import type { DbConnection } from "@bb/db";
+import type { DbConnection, InstalledPluginRow } from "@bb/db";
 import type { DynamicTool, Thread } from "@bb/domain";
 import type { HostDaemonConnectTunnelIdentity } from "@bb/host-daemon-contract";
 import {
@@ -8,11 +8,17 @@ import {
   type PluginRuntimeStatus,
   type PluginSourceDetail,
 } from "@bb/server-contract";
-import type { InternalExecutionSessions } from "../../auth/internal-execution-sessions.js";
+import type {
+  InternalExecutionPrincipalMode,
+  InternalExecutionSessions,
+} from "../../auth/internal-execution-sessions.js";
 import type { InternalPrincipalAuthority } from "../../auth/internal-principal-authority.js";
 import type { ServerLogger } from "../../types.js";
 import type { NotificationHub } from "../../ws/hub.js";
-import type { BundledPluginRegistration } from "./builtin-registry.js";
+import type {
+  BundledPluginRegistration,
+  ServerOwnedPackagedPluginRegistration,
+} from "./builtin-registry.js";
 import type { PluginManifest } from "./manifest.js";
 import type {
   PluginApiHandle,
@@ -59,6 +65,17 @@ export interface PluginScheduleEntry {
 }
 
 export type PluginListEntry = InstalledPlugin;
+
+export type PluginLoadTarget = Pick<
+  InstalledPluginRow,
+  | "enabled"
+  | "id"
+  | "provenance"
+  | "rootDir"
+  | "source"
+  | "sourceBuiltinName"
+  | "sourceKind"
+>;
 
 /**
  * Runner state for one background service instance. `current` is the live
@@ -117,8 +134,12 @@ export interface PluginServiceDeps {
    * bb.sdk. Isolated plugin-service tests omit this and keep plain SDK fetch.
    */
   internalExecution?: PluginInternalExecution;
+  /** Server authority profile; defaults to local-owner in isolated tests. */
+  principalMode?: InternalExecutionPrincipalMode;
   /** Declared first-party plugins bundled with the app; test-only override. */
   bundledPlugins?: readonly BundledPluginRegistration[];
+  /** Test override for the hidden Work Together runtime package root. */
+  workTogetherRuntimePlugin?: ServerOwnedPackagedPluginRegistration;
   /** Managed source-development only: rebuild and reload builtin frontends. */
   watchBuiltinPluginSources?: boolean;
   /** Factory-execution time box; overridable in tests. */

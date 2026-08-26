@@ -74,7 +74,11 @@ import {
   readPluginManifest,
   type PluginManifest,
 } from "./manifest.js";
-import { listBundledPluginRegistrations } from "./builtin-registry.js";
+import {
+  WORK_TOGETHER_CELL_TOOL_CONTRACT_VERSION,
+  listBundledPluginRegistrations,
+  resolveWorkTogetherRuntimePluginRegistration,
+} from "./builtin-registry.js";
 import {
   type BbPluginApi,
   type PluginAgentConfigurationContext,
@@ -171,6 +175,11 @@ export interface PluginService {
   /** Dispose all loaded plugins (server shutdown). */
   stop(): Promise<void>;
   list(): PluginListEntry[];
+  /** Hidden required-runtime status; null outside Work Together mode. */
+  workTogetherRuntimeReadiness(): {
+    running: boolean;
+    cellToolContractVersion: typeof WORK_TOGETHER_CELL_TOOL_CONTRACT_VERSION;
+  } | null;
   /** Palettes declared by currently loaded plugins, ordered by plugin id. */
   listThemes(): PluginThemeMeta[];
   /** Read a loaded plugin palette by its globally namespaced id. */
@@ -925,6 +934,12 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
   const logger = deps.logger;
   const bundledPlugins =
     deps.bundledPlugins ?? listBundledPluginRegistrations();
+  const principalMode = deps.principalMode ?? "local-owner";
+  const workTogetherRuntimePlugin =
+    principalMode === "work-together"
+      ? (deps.workTogetherRuntimePlugin ??
+        resolveWorkTogetherRuntimePluginRegistration())
+      : null;
   const mentionSearchTimeoutMs =
     deps.mentionSearchTimeoutMs ?? DEFAULT_MENTION_SEARCH_TIMEOUT_MS;
   const mentionResolveTimeoutMs =
@@ -1366,6 +1381,17 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
   return {
     isBuiltin: isBuiltinPluginId,
 
+    workTogetherRuntimeReadiness() {
+      if (workTogetherRuntimePlugin === null) return null;
+      return {
+        running:
+          loaded.has(workTogetherRuntimePlugin.pluginId) &&
+          statuses.get(workTogetherRuntimePlugin.pluginId)?.status ===
+            "running",
+        cellToolContractVersion: WORK_TOGETHER_CELL_TOOL_CONTRACT_VERSION,
+      };
+    },
+
     listThemes() {
       return [...loaded.entries()]
         .sort(([a], [b]) => a.localeCompare(b))
@@ -1459,6 +1485,25 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
         await recoverIncompletePluginRollbacks();
       });
       await reconcileBundled();
+      if (workTogetherRuntimePlugin !== null) {
+        const manifest = await readPluginManifest(
+          workTogetherRuntimePlugin.rootDir,
+        );
+        if (manifest.id !== workTogetherRuntimePlugin.pluginId) {
+          throw new Error("server-owned runtime manifest id mismatch");
+        }
+        await withLifecycleLock(workTogetherRuntimePlugin.pluginId, () =>
+          loadOne({
+            enabled: true,
+            id: workTogetherRuntimePlugin.pluginId,
+            provenance: "builtin",
+            rootDir: workTogetherRuntimePlugin.rootDir,
+            source: `builtin:${workTogetherRuntimePlugin.name}`,
+            sourceBuiltinName: workTogetherRuntimePlugin.name,
+            sourceKind: "builtin",
+          }),
+        );
+      }
       await loadAll();
       await withPluginOperationLock(REGISTRATION_MUTATION_KEY, runArtifactGc);
       if (deps.watchBuiltinPluginSources) {

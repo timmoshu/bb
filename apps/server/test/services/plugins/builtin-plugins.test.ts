@@ -31,6 +31,7 @@ import {
   BUILTIN_PLUGINS,
   OFFICIAL_PLUGINS,
   WORK_TOGETHER_BUILTIN_ENABLED_RECONCILE_NAMES,
+  type ServerOwnedPackagedPluginRegistration,
   resolveBuiltinPluginRootPath,
   workTogetherBuiltinDefaultsMarkerApplied,
   workTogetherBuiltinDefaultsMarkerPath,
@@ -150,6 +151,8 @@ function createService(args: {
   rootDir?: string;
   bundledPlugins?: readonly BundledPluginRegistration[];
   watchBuiltinPluginSources?: boolean;
+  principalMode?: "local-owner" | "work-together";
+  workTogetherRuntimePlugin?: ServerOwnedPackagedPluginRegistration;
 }): PluginService {
   return createPluginService({
     db: args.db,
@@ -175,6 +178,8 @@ function createService(args: {
             },
           ]),
     watchBuiltinPluginSources: args.watchBuiltinPluginSources,
+    principalMode: args.principalMode,
+    workTogetherRuntimePlugin: args.workTogetherRuntimePlugin,
     loadTimeoutMs: 2000,
   });
 }
@@ -1227,6 +1232,161 @@ describe("builtin plugin reconciliation", () => {
     await expect(
       readFile(join(copiedRoot, "dist", "app.css"), "utf8"),
     ).resolves.toBe("/* built */\n");
+  });
+});
+
+describe("server-owned Work Together runtime", () => {
+  let db: DbConnection;
+  let workDir: string;
+  let service: PluginService | undefined;
+  const originalCoordinatorOrigin =
+    process.env.BB_WORK_TOGETHER_COORDINATOR_ORIGIN;
+  const originalCellToolSecret =
+    process.env.BB_WORK_TOGETHER_CELL_TOOL_SECRET;
+
+  beforeEach(async () => {
+    db = createConnection(":memory:");
+    migrate(db);
+    workDir = await mkdtemp(join(tmpdir(), "bb-owned-runtime-"));
+  });
+
+  afterEach(async () => {
+    await service?.stop();
+    if (originalCoordinatorOrigin === undefined) {
+      delete process.env.BB_WORK_TOGETHER_COORDINATOR_ORIGIN;
+    } else {
+      process.env.BB_WORK_TOGETHER_COORDINATOR_ORIGIN =
+        originalCoordinatorOrigin;
+    }
+    if (originalCellToolSecret === undefined) {
+      delete process.env.BB_WORK_TOGETHER_CELL_TOOL_SECRET;
+    } else {
+      process.env.BB_WORK_TOGETHER_CELL_TOOL_SECRET = originalCellToolSecret;
+    }
+    db.$client.close();
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("loads the real package with four tools and one ten-skill root", async () => {
+    process.env.BB_WORK_TOGETHER_COORDINATOR_ORIGIN =
+      "https://work.vespyn.com";
+    process.env.BB_WORK_TOGETHER_CELL_TOOL_SECRET = "s".repeat(32);
+    service = createService({
+      db,
+      dataDir: join(workDir, "data"),
+      includeBuiltin: false,
+      principalMode: "work-together",
+    });
+
+    await service.start();
+
+    expect(service.workTogetherRuntimeReadiness()).toEqual({
+      running: true,
+      cellToolContractVersion: 1,
+    });
+    expect(
+      service
+        .listAgentTools()
+        .filter((tool) => tool.pluginId === "vespyn-runtime")
+        .map((tool) => tool.tool.name),
+    ).toEqual([
+      "goal_document_propose",
+      "workstream_completeness",
+      "room_result_publish",
+      "room_subagent_spawn",
+    ]);
+    expect(
+      service
+        .listSkillRootContributions()
+        .filter((root) => root.pluginId === "vespyn-runtime"),
+    ).toHaveLength(1);
+    expect(service.list()).toEqual([]);
+  });
+
+  it("loads the required runtime in Work Together mode without an installed row", async () => {
+    const rootDir = await writeNamedBuiltinFixture(workDir, "vespyn-runtime");
+    service = createService({
+      db,
+      dataDir: join(workDir, "data"),
+      includeBuiltin: false,
+      principalMode: "work-together",
+      workTogetherRuntimePlugin: {
+        name: "vespyn-runtime",
+        pluginId: "vespyn-runtime",
+        rootDir,
+      },
+    });
+
+    await service.start();
+
+    expect(service.list()).toEqual([]);
+    expect(getInstalledPluginRegistration(db, "vespyn-runtime")).toBeUndefined();
+    expect(service.workTogetherRuntimeReadiness()).toEqual({
+      running: true,
+      cellToolContractVersion: 1,
+    });
+  });
+
+  it("does not load the required runtime in local-owner mode", async () => {
+    const rootDir = await writeNamedBuiltinFixture(workDir, "vespyn-runtime");
+    service = createService({
+      db,
+      dataDir: join(workDir, "data"),
+      includeBuiltin: false,
+      principalMode: "local-owner",
+      workTogetherRuntimePlugin: {
+        name: "vespyn-runtime",
+        pluginId: "vespyn-runtime",
+        rootDir,
+      },
+    });
+
+    await service.start();
+
+    expect(service.workTogetherRuntimeReadiness()).toBeNull();
+    expect(service.listSkillRootContributions()).toEqual([]);
+  });
+
+  it("refuses obsolete Work Together extensions without deleting their rows", async () => {
+    const rootDir = await writeNamedBuiltinFixture(
+      workDir,
+      "vespyn-agent-toolkit",
+    );
+    seedInstalledBuiltin({
+      db,
+      name: "vespyn-agent-toolkit",
+      pluginId: "vespyn-agent-toolkit",
+      rootDir,
+      enabled: true,
+      source: "path",
+    });
+    const runtimeRoot = await writeNamedBuiltinFixture(workDir, "vespyn-runtime");
+    service = createService({
+      db,
+      dataDir: join(workDir, "data"),
+      includeBuiltin: false,
+      principalMode: "work-together",
+      workTogetherRuntimePlugin: {
+        name: "vespyn-runtime",
+        pluginId: "vespyn-runtime",
+        rootDir: runtimeRoot,
+      },
+    });
+
+    await service.start();
+
+    expect(getInstalledPluginRegistration(db, "vespyn-agent-toolkit")).toBeDefined();
+    expect(service.list()).toMatchObject([
+      { id: "vespyn-agent-toolkit", status: "incompatible" },
+    ]);
+    expect(
+      service
+        .listSkillRootContributions()
+        .some((entry) => entry.pluginId === "vespyn-agent-toolkit"),
+    ).toBe(false);
+    await expect(service.installPath(rootDir)).rejects.toThrow(
+      /obsolete in Work Together mode/,
+    );
   });
 });
 
