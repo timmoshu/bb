@@ -120,7 +120,7 @@ describe("vespyn runtime plugin factory", () => {
     expect(serialized).not.toContain(secret);
   });
 
-  it("registers exactly the four cell tools and does not define settings", () => {
+  it("registers the cell tools and does not define settings", () => {
     process.env[COORDINATOR_ORIGIN_ENV] = ORIGIN;
     process.env[CELL_TOOL_SECRET_ENV] = SECRET;
     const { tools, configure, settingsDefined } = installPlugin();

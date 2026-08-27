@@ -3,6 +3,15 @@ import { z } from "zod";
 
 import { loadCellToolConfig } from "./config.js";
 import {
+  buildFilespaceGetRequest,
+  buildFilespaceListRequest,
+  buildFilespacePutRequest,
+  FILESPACE_GET_TOOL,
+  FILESPACE_LIST_TOOL,
+  FILESPACE_PUT_TOOL,
+  postFilespace,
+} from "./filespace.js";
+import {
   buildProposeRequest,
   postGoalDocumentPropose,
 } from "./goal-document-propose.js";
@@ -37,6 +46,21 @@ const roomSubagentSpawnParameters = z.object({
 });
 
 const workstreamCompletenessParameters = z.object({});
+
+const filespaceListParameters = z.object({
+  prefix: z.string().optional(),
+});
+
+const filespaceGetParameters = z.object({
+  path: z.string(),
+});
+
+const filespacePutParameters = z.object({
+  path: z.string(),
+  expectedGeneration: z.number().int().nonnegative(),
+  text: z.string(),
+  mediaType: z.string(),
+});
 
 export default function plugin(bb: BbPluginApi) {
   const config = loadCellToolConfig();
@@ -142,6 +166,87 @@ export default function plugin(bb: BbPluginApi) {
         prompt: input.prompt,
       });
       return postRoomSubagentSpawn({
+        coordinatorOrigin: config.coordinatorOrigin,
+        secret: config.secret,
+        body,
+        signal: context.signal,
+      });
+    },
+  });
+
+  bb.agents.registerTool({
+    name: FILESPACE_LIST_TOOL,
+    description:
+      "List Goal filespace paths for this Room. Not the git repository.",
+    instructions:
+      "Call filespace_list to see Goal files. Folders are path prefixes. Do not confuse this with the git checkout.",
+    experimental_statusLabels: {
+      pending: "Listing Goal files",
+      completed: "Listed Goal files",
+    },
+    parameters: filespaceListParameters,
+    async execute(input, context) {
+      const body = buildFilespaceListRequest({
+        threadId: context.threadId,
+        projectId: context.projectId,
+        ...(input.prefix !== undefined ? { prefix: input.prefix } : {}),
+      });
+      return postFilespace({
+        coordinatorOrigin: config.coordinatorOrigin,
+        secret: config.secret,
+        body,
+        signal: context.signal,
+      });
+    },
+  });
+
+  bb.agents.registerTool({
+    name: FILESPACE_GET_TOOL,
+    description:
+      "Read one Goal filespace object by path. Not a git file.",
+    instructions:
+      "Pass the filespace path from filespace_list. Do not pass a git checkout path.",
+    experimental_statusLabels: {
+      pending: "Reading Goal file",
+      completed: "Read Goal file",
+    },
+    parameters: filespaceGetParameters,
+    async execute(input, context) {
+      const body = buildFilespaceGetRequest({
+        threadId: context.threadId,
+        projectId: context.projectId,
+        path: input.path,
+      });
+      return postFilespace({
+        coordinatorOrigin: config.coordinatorOrigin,
+        secret: config.secret,
+        body,
+        signal: context.signal,
+      });
+    },
+  });
+
+  bb.agents.registerTool({
+    name: FILESPACE_PUT_TOOL,
+    description:
+      "Create or overwrite a Goal filespace file (CAS). Not git. Never put the git root.",
+    instructions:
+      "Put notes and artifacts on the Goal. expectedGeneration is 0 to create, or the generation from filespace_get. Never filespace_put a path under the git checkout.",
+    experimental_statusLabels: {
+      pending: "Saving Goal file",
+      completed: "Saved Goal file",
+    },
+    parameters: filespacePutParameters,
+    async execute(input, context) {
+      const body = buildFilespacePutRequest({
+        threadId: context.threadId,
+        projectId: context.projectId,
+        path: input.path,
+        expectedGeneration: input.expectedGeneration,
+        text: input.text,
+        mediaType: input.mediaType,
+      });
+      return postFilespace({
         coordinatorOrigin: config.coordinatorOrigin,
         secret: config.secret,
         body,

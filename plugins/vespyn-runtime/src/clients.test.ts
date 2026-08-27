@@ -5,7 +5,13 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { PluginAgentToolResult } from "@get-bb/plugin-sdk";
 
-import { CELL_TOOL_CONTRACT_VERSION } from "./http.js";
+import {
+  buildFilespacePutRequest,
+  postFilespace,
+} from "./filespace.js";
+import {
+  CELL_TOOL_CONTRACT_VERSION,
+} from "./http.js";
 import {
   buildProposeRequest,
   cellToolProposeUrl,
@@ -327,5 +333,49 @@ describe("room_subagent_spawn request + HTTP", () => {
       text: "Subagent spawned. childThreadId=thr_accepted2",
     }]);
     expectCellToolHeaders(captured.headers, SECRET);
+  });
+});
+
+describe("filespace_put request + HTTP", () => {
+  it("posts filespace.put and refuses a git-root path without calling the coordinator", async () => {
+    const captured = { headers: {} as IncomingMessage["headers"], body: "", url: "" };
+    const origin = await listen((req, res) => {
+      jsonOnEnd(req, res, 201, {
+        data: { path: "notes/decision.md", generation: 1 },
+      }, captured);
+    });
+
+    const body = buildFilespacePutRequest({
+      threadId: "thr_23456789ab",
+      projectId: "proj_standard1",
+      path: "notes/decision.md",
+      expectedGeneration: 0,
+      text: "Keep compounding notes on the Goal.",
+      mediaType: "text/markdown",
+    });
+    const result = structuredResult(await postFilespace({
+      coordinatorOrigin: origin,
+      secret: SECRET,
+      body,
+      signal: new AbortController().signal,
+    }));
+    expect(result.isError).toBeFalsy();
+    expect(captured.url).toBe("/cell-tools/v1/filespace");
+    expect(JSON.parse(captured.body).kind).toBe("filespace.put");
+
+    const refused = structuredResult(await postFilespace({
+      coordinatorOrigin: origin,
+      secret: SECRET,
+      body: buildFilespacePutRequest({
+        threadId: "thr_23456789ab",
+        projectId: "proj_standard1",
+        path: "../",
+        expectedGeneration: 0,
+        text: "nope",
+        mediaType: "text/markdown",
+      }),
+      signal: new AbortController().signal,
+    }));
+    expect(refused.isError).toBe(true);
   });
 });
