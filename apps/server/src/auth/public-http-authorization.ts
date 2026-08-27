@@ -14,8 +14,9 @@ import type { Context } from "hono";
 import { ApiError } from "../errors.js";
 import {
   authorize,
-  readAttachedClientRealtimeScope,
+  requirePrincipal,
 } from "../request-context.js";
+import { isLocalOwnerPrincipal } from "./local-owner-adapter.js";
 import { isWorkTogetherRoomScopedThreadCreate } from "./work-together-room-thread-create-scope.js";
 
 /** Namespaced action prefix for registry-issued public HTTP operations. */
@@ -320,7 +321,7 @@ export const UNTYPED_PUBLIC_HTTP_INVENTORY = Object.freeze([
  * plugin/catalog/skills operations stay outside both signed role allowlists.
  *
  * `threads.create` is member-level (parity with `threads.send` / Room
- * `message.send`). Signed Work Together sessions may use it only for a Room
+ * `message.send`). Non-local-owner principals may use it only for a Room
  * child spawn: the public HTTP middleware requires a current reservation on
  * this cell whose primary thread, reserved environment, and Room project
  * match the body. Failures deny as a generic allowlist miss. Stock
@@ -1052,7 +1053,7 @@ export function createPublicHttpAuthorizationMiddleware(args: {
     if (
       resolved.kind === "mapped" &&
       resolved.operationName === "threads.create" &&
-      isScopedWorkTogetherHttpSession(context)
+      shouldEnforceWorkTogetherRoomThreadCreateScope(context)
     ) {
       const body = await readClonedJsonBody(context);
       if (!isWorkTogetherRoomScopedThreadCreate(args.db, body)) {
@@ -1074,8 +1075,20 @@ export function createPublicHttpAuthorizationMiddleware(args: {
   };
 }
 
-function isScopedWorkTogetherHttpSession(context: Context): boolean {
-  return readAttachedClientRealtimeScope(context) === "scoped";
+/**
+ * Stock local-owner create stays independently allow-all. Every other
+ * attached principal — including signed Work Together — must pass the Room
+ * reservation checks. Fail closed when no principal is attached: authorize
+ * still returns 401, and we never skip the body gate.
+ */
+function shouldEnforceWorkTogetherRoomThreadCreateScope(
+  context: Context,
+): boolean {
+  try {
+    return !isLocalOwnerPrincipal(requirePrincipal(context));
+  } catch {
+    return true;
+  }
 }
 
 async function readClonedJsonBody(context: Context): Promise<unknown> {

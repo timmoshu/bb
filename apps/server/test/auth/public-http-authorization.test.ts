@@ -1359,6 +1359,43 @@ describe("Work Together Room scoped threads.create", () => {
         roomChildCreateBody(unprovisioned),
       ),
     ).toBe(false);
+
+    const host = upsertHost(db, noopNotifier, {
+      id: "host-standard-unscoped",
+      name: "standard-unscoped",
+      type: "persistent",
+    });
+    const { project: standardProject } = createProject(db, noopNotifier, {
+      name: "ordinary project",
+      source: {
+        type: "local_path",
+        hostId: host.id,
+        path: "/tmp/ordinary-project",
+      },
+    });
+    const standardEnvironment = createEnvironment(db, noopNotifier, {
+      projectId: standardProject.id,
+      hostId: host.id,
+      workspaceProvisionType: "unmanaged",
+      status: "ready",
+    });
+    const standardThread = createThread(db, noopNotifier, {
+      projectId: standardProject.id,
+      providerId: "test-provider",
+      status: "idle",
+    });
+    expect(
+      isWorkTogetherRoomScopedThreadCreate(db, {
+        projectId: standardProject.id,
+        parentThreadId: standardThread.id,
+        environment: {
+          type: "reuse",
+          environmentId: standardEnvironment.id,
+        },
+        origin: "app",
+        input: [{ type: "text", text: "spawn" }],
+      }),
+    ).toBe(false);
   });
 
   it("authorizes signed member and owner Room child create and 404s unscoped bodies", async () => {
@@ -1423,14 +1460,49 @@ describe("Work Together Room scoped threads.create", () => {
     expect(handlerCalls).toBe(1);
     await expect(authorized.text()).resolves.toBe("created");
 
+    const matching = roomChildCreateBody(room);
+    const { parentThreadId: _parent, ...missingParent } = matching;
+    const ordinaryHost = upsertHost(db, noopNotifier, {
+      id: "host-ordinary-http",
+      name: "ordinary-http",
+      type: "persistent",
+    });
+    const { project: ordinaryProject } = createProject(db, noopNotifier, {
+      name: "ordinary http project",
+      source: {
+        type: "local_path",
+        hostId: ordinaryHost.id,
+        path: "/tmp/ordinary-http-project",
+      },
+    });
+    const ordinaryEnvironment = createEnvironment(db, noopNotifier, {
+      projectId: ordinaryProject.id,
+      hostId: ordinaryHost.id,
+      workspaceProvisionType: "unmanaged",
+      status: "ready",
+    });
+    const ordinaryThread = createThread(db, noopNotifier, {
+      projectId: ordinaryProject.id,
+      providerId: "test-provider",
+      status: "idle",
+    });
     const denials = [
-      roomChildCreateBody(room, { parentThreadId: undefined }),
+      missingParent,
       roomChildCreateBody(room, {
         environment: { type: "project-default" },
       }),
       roomChildCreateBody(room, { projectId: other.projectId }),
       roomChildCreateBody(room, { parentThreadId: other.primaryThreadId }),
-      roomChildCreateBody(other),
+      {
+        projectId: ordinaryProject.id,
+        parentThreadId: ordinaryThread.id,
+        environment: {
+          type: "reuse",
+          environmentId: ordinaryEnvironment.id,
+        },
+        origin: "app",
+        input: [{ type: "text", text: "spawn" }],
+      },
     ];
     for (const body of denials) {
       const response = await signedCreate(body);
@@ -1442,6 +1514,10 @@ describe("Work Together Room scoped threads.create", () => {
     }
     expect(handlerCalls).toBe(1);
 
+    const otherRoom = await signedCreate(roomChildCreateBody(other));
+    expect(otherRoom.status).toBe(201);
+    expect(handlerCalls).toBe(2);
+
     membership.setMembership({
       cellId: CELL_ID,
       subject: SUBJECT,
@@ -1450,7 +1526,7 @@ describe("Work Together Room scoped threads.create", () => {
     });
     const ownerAuthorized = await signedCreate(roomChildCreateBody(room));
     expect(ownerAuthorized.status).toBe(201);
-    expect(handlerCalls).toBe(2);
+    expect(handlerCalls).toBe(3);
   });
 
   it("does not tighten local-owner thread create", async () => {

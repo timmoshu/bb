@@ -231,16 +231,6 @@ export function requirePrincipalSession(
 }
 
 /**
- * Read the attached session's client realtime scope, or null when no
- * Principal has been resolved for this request.
- */
-export function readAttachedClientRealtimeScope(
-  context: object,
-): ClientRealtimeScope | null {
-  return attachedPrincipalSessions.get(context)?.clientRealtimeScope ?? null;
-}
-
-/**
  * Fail-closed frozen client-socket session (principal + authorize + metadata).
  * Used for `/ws` and `/ws/terminals/:terminalId` upgrade capture. Missing
  * attachment fails closed.
