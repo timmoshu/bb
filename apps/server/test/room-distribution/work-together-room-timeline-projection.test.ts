@@ -419,18 +419,15 @@ describe("Work Together Room timeline projection", () => {
             tool("wt_subagent_spawn", "room_subagent_spawn", 4),
             tool("mcp_tool", "docs:lookup", 5),
             tool("shell_tool", "Bash", 6),
-            tool(
-              "labeled_tool",
-              "workstream_completeness",
-              7,
-              {
-                statusLabels: {
-                  pending: "Judging workstream completeness",
-                  completed: "Judged workstream completeness",
-                },
+            tool("labeled_tool", "workstream_completeness", 7, {
+              statusLabels: {
+                pending: "Judging workstream completeness",
+                completed: "Judged workstream completeness",
               },
-            ),
+            }),
             command("shell_command", 8),
+            tool("skill_tool", "Skill", 9),
+            tool("mcp_skill", "plugin:Skill", 10),
             question({ id: "ask_user_question" }),
           ],
         }),
@@ -438,17 +435,33 @@ describe("Work Together Room timeline projection", () => {
     );
 
     expect(result.rows).toMatchObject([
-      { activityKind: "tool", label: "Tool", toolName: "workstream_completeness" },
-      { activityKind: "tool", label: "Tool", toolName: "goal_document_propose" },
+      {
+        activityKind: "tool",
+        label: "Tool",
+        toolName: "workstream_completeness",
+      },
+      {
+        activityKind: "tool",
+        label: "Tool",
+        toolName: "goal_document_propose",
+      },
       { activityKind: "tool", label: "Tool", toolName: "room_result_publish" },
       { activityKind: "tool", label: "Tool", toolName: "room_subagent_spawn" },
       { activityKind: "tool", label: "Tool", toolName: "docs:lookup" },
       { activityKind: "tool", label: "Tool", toolName: "Bash" },
-      { activityKind: "tool", label: "Tool", toolName: "workstream_completeness" },
+      {
+        activityKind: "tool",
+        label: "Tool",
+        toolName: "workstream_completeness",
+      },
       { activityKind: "command", label: "Command" },
+      { activityKind: "tool", label: "Tool" },
+      { activityKind: "tool", label: "Tool" },
       { kind: "work", workKind: "question" },
     ]);
     expect(result.rows[7]).not.toHaveProperty("toolName");
+    expect(result.rows[8]).not.toHaveProperty("toolName");
+    expect(result.rows[9]).not.toHaveProperty("toolName");
     const wire = JSON.stringify(result);
     expect(wire).not.toContain("secret query sentinel");
     expect(wire).not.toContain("/secret/path/sentinel");

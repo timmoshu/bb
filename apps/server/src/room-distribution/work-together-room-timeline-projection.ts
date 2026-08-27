@@ -441,13 +441,16 @@ function projectActivityToolName(
   const raw = privateActivityToolName(row);
   if (raw === undefined) return undefined;
   const toolName = raw.normalize("NFC");
+  const baseName = toolName.split(":").at(-1) ?? toolName;
   if (
     toolName.trim().length === 0 ||
     WORK_TOGETHER_ROOM_VISIBLE_DISALLOWED_CONTROL.test(toolName) ||
     Buffer.byteLength(toolName, "utf8") > MAX_TOOL_NAME_BYTES ||
     toolName.includes(input.privateThreadId) ||
     toolName.includes(input.environmentId) ||
-    toolName.includes(input.projectId)
+    toolName.includes(input.projectId) ||
+    // Skill invocations stay generic Tool rows, not named work-trace steps.
+    baseName === "Skill"
   ) {
     return undefined;
   }
