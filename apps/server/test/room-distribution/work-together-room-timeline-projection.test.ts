@@ -4,8 +4,10 @@ import type {
   ThreadTimelineResponse,
   TimelineApprovalWorkRow,
   TimelineCommandWorkRow,
+  TimelineDelegationWorkRow,
   TimelineQuestionWorkRow,
   TimelineSystemRow,
+  TimelineToolWorkRow,
   TimelineTurnRow,
   TimelineUserConversationRow,
   TimelineWorkRow,
@@ -95,6 +97,53 @@ function command(
     completedAt: status === "pending" ? null : 2_000 + sequence,
     approvalStatus: null,
     activityIntents: [],
+  };
+}
+
+function tool(
+  id: string,
+  toolName: string,
+  sequence = 1,
+  extras: Partial<
+    Pick<TimelineToolWorkRow, "toolArgs" | "statusLabels" | "output">
+  > = {},
+): TimelineToolWorkRow {
+  return {
+    ...rowBase(id, sequence),
+    kind: "work",
+    workKind: "tool",
+    status: "completed",
+    callId: "call_private_sentinel",
+    toolName,
+    toolArgs: extras.toolArgs ?? {
+      query: "secret query sentinel",
+      path: "/secret/path/sentinel",
+    },
+    ...(extras.statusLabels ? { statusLabels: extras.statusLabels } : {}),
+    output: extras.output ?? "secret output sentinel",
+    completedAt: 2_000 + sequence,
+    approvalStatus: null,
+    activityIntents: [],
+  };
+}
+
+function delegation(
+  id: string,
+  toolName: string,
+  sequence = 1,
+): TimelineDelegationWorkRow {
+  return {
+    ...rowBase(id, sequence),
+    kind: "work",
+    workKind: "delegation",
+    status: "completed",
+    callId: "call_private_sentinel",
+    toolName,
+    subagentType: "private subagent type sentinel",
+    description: "private description sentinel",
+    output: "secret output sentinel",
+    completedAt: 2_000 + sequence,
+    childRows: [userMessage("private delegated child", "child", sequence + 50)],
   };
 }
 
@@ -227,6 +276,12 @@ function activityFixture(
   if (workKind === "workflow") {
     return workflow(`activity_${sequence}`, sequence, "completed");
   }
+  if (workKind === "tool") {
+    return tool(`activity_${sequence}`, "Read", sequence);
+  }
+  if (workKind === "delegation") {
+    return delegation(`activity_${sequence}`, "Agent", sequence);
+  }
   return {
     ...rowBase(`activity_${sequence}`, sequence),
     kind: "work",
@@ -318,13 +373,20 @@ describe("Work Together Room timeline projection", () => {
       input({ timeline: timeline({ rows }) }),
     );
     expect(result.rows).toHaveLength(11);
-    for (const [index, [, publicKind, label]] of kinds.entries()) {
+    for (const [index, [sourceKind, publicKind, label]] of kinds.entries()) {
       expect(result.rows[index]).toMatchObject({
         kind: "activity",
         activityKind: publicKind,
         status: "completed",
         label,
       });
+      if (sourceKind === "tool") {
+        expect(result.rows[index]).toMatchObject({ toolName: "Read" });
+      } else if (sourceKind === "delegation") {
+        expect(result.rows[index]).toMatchObject({ toolName: "Agent" });
+      } else {
+        expect(result.rows[index]).not.toHaveProperty("toolName");
+      }
     }
     expect(result.rows.slice(-3)).toMatchObject([
       { status: "running", completedAt: null },
@@ -336,12 +398,129 @@ describe("Work Together Room timeline projection", () => {
       "secret command sentinel",
       "/secret/cwd/sentinel",
       "secret output sentinel",
+      "secret query sentinel",
+      "/secret/path/sentinel",
       "private delegated child",
       "private workflow summary sentinel",
       "private workflow error sentinel",
     ]) {
       expect(wire).not.toContain(sentinel);
     }
+  });
+
+  it("projects the private toolName on tool and delegation activity rows", () => {
+    const result = projectWorkTogetherRoomTimeline(
+      input({
+        timeline: timeline({
+          rows: [
+            tool("wt_completeness", "workstream_completeness", 1),
+            tool("wt_goal_propose", "goal_document_propose", 2),
+            tool("wt_result_publish", "room_result_publish", 3),
+            tool("wt_subagent_spawn", "room_subagent_spawn", 4),
+            tool("mcp_tool", "docs:lookup", 5),
+            tool("shell_tool", "Bash", 6),
+            delegation("delegate_agent", "Agent", 7),
+            tool("labeled_tool", "workstream_completeness", 8, {
+              statusLabels: {
+                pending: "Judging workstream completeness",
+                completed: "Judged workstream completeness",
+              },
+            }),
+            command("shell_command", 9),
+            tool("skill_tool", "Skill", 10),
+            tool("mcp_skill", "plugin:Skill", 11),
+            question({ id: "ask_user_question" }),
+          ],
+        }),
+      }),
+    );
+
+    expect(result.rows).toMatchObject([
+      {
+        activityKind: "tool",
+        label: "Tool",
+        toolName: "workstream_completeness",
+      },
+      {
+        activityKind: "tool",
+        label: "Tool",
+        toolName: "goal_document_propose",
+      },
+      { activityKind: "tool", label: "Tool", toolName: "room_result_publish" },
+      { activityKind: "tool", label: "Tool", toolName: "room_subagent_spawn" },
+      { activityKind: "tool", label: "Tool", toolName: "docs:lookup" },
+      { activityKind: "tool", label: "Tool", toolName: "Bash" },
+      {
+        activityKind: "delegation",
+        label: "Delegated work",
+        toolName: "Agent",
+      },
+      {
+        activityKind: "tool",
+        label: "Tool",
+        toolName: "workstream_completeness",
+      },
+      { activityKind: "command", label: "Command" },
+      { activityKind: "tool", label: "Tool" },
+      { activityKind: "tool", label: "Tool" },
+      { kind: "work", workKind: "question" },
+    ]);
+    expect(result.rows[8]).not.toHaveProperty("toolName");
+    expect(result.rows[9]).not.toHaveProperty("toolName");
+    expect(result.rows[10]).not.toHaveProperty("toolName");
+    const wire = JSON.stringify(result);
+    expect(wire).not.toContain("secret query sentinel");
+    expect(wire).not.toContain("/secret/path/sentinel");
+    expect(wire).not.toContain("secret output sentinel");
+    expect(wire).not.toContain("secret command sentinel");
+    expect(wire).not.toContain("private delegated child");
+    expect(wire).not.toContain("private subagent type sentinel");
+    expect(wire).not.toContain("private description sentinel");
+    expect(wire).not.toContain("Judging workstream completeness");
+    expect(wire).not.toContain("Judged workstream completeness");
+    expect(wire).not.toContain("statusLabels");
+    expect(wire).not.toContain("toolArgs");
+  });
+
+  it("omits toolName when the private identifier is blank, oversized, identity-bearing, or a Skill", () => {
+    const result = projectWorkTogetherRoomTimeline(
+      input({
+        attachedStreams: [
+          {
+            privateThreadId: "thr_private_attached_001",
+            publicStreamId: "child_stream_002",
+          },
+        ],
+        timeline: timeline({
+          rows: [
+            tool("blank_name", "   ", 1),
+            tool("control_name", "Read\u0000", 2),
+            tool("oversized_name", "x".repeat(257), 3),
+            tool("private_thread_name", PRIVATE_THREAD_ID, 4),
+            tool("private_environment_name", ENVIRONMENT_ID, 5),
+            tool("private_project_name", PROJECT_ID, 6),
+            tool("private_attached_thread_name", "thr_private_attached_001", 7),
+            tool("spaced_skill_name", "plugin:Skill ", 8),
+            tool("nfc_name", "e\u0301", 9),
+          ],
+        }),
+      }),
+    );
+
+    expect(result.rows[0]).not.toHaveProperty("toolName");
+    expect(result.rows[1]).not.toHaveProperty("toolName");
+    expect(result.rows[2]).not.toHaveProperty("toolName");
+    expect(result.rows[3]).not.toHaveProperty("toolName");
+    expect(result.rows[4]).not.toHaveProperty("toolName");
+    expect(result.rows[5]).not.toHaveProperty("toolName");
+    expect(result.rows[6]).not.toHaveProperty("toolName");
+    expect(result.rows[7]).not.toHaveProperty("toolName");
+    expect(result.rows[8]).toMatchObject({ toolName: "é" });
+    const wire = JSON.stringify(result);
+    expect(wire).not.toContain(PRIVATE_THREAD_ID);
+    expect(wire).not.toContain(ENVIRONMENT_ID);
+    expect(wire).not.toContain(PROJECT_ID);
+    expect(wire).not.toContain("thr_private_attached_001");
   });
 
   it("projects visible conversation copy through scalar identity scrubbing", () => {
@@ -707,9 +886,10 @@ describe("Work Together Room timeline projection", () => {
           rows: [
             userMessage("message_private_sentinel"),
             command("command_private_sentinel", 2),
+            tool("tool_private_sentinel", "workstream_completeness", 3),
             question(),
             approval(),
-            systemRow("system_private_sentinel", "error", 5),
+            systemRow("system_private_sentinel", "error", 6),
           ],
         }),
       }),
@@ -751,7 +931,6 @@ describe("Work Together Room timeline projection", () => {
       "exitCode",
       "approvalStatus",
       "activityIntents",
-      "toolName",
       "toolArgs",
       "statusLabels",
       "change",
@@ -789,12 +968,32 @@ describe("Work Together Room timeline projection", () => {
         value.forEach(visit);
         return;
       }
+      const isActivity = "kind" in value && value.kind === "activity";
       for (const [key, child] of Object.entries(value)) {
+        if (key === "toolName") {
+          expect(isActivity).toBe(true);
+          continue;
+        }
         expect(forbiddenKeys).not.toContain(key);
         visit(child);
       }
     };
     visit(result);
+    expect(result.rows).toMatchObject([
+      { kind: "conversation" },
+      { kind: "activity", activityKind: "command" },
+      {
+        kind: "activity",
+        activityKind: "tool",
+        toolName: "workstream_completeness",
+      },
+      { kind: "work", workKind: "question" },
+      { kind: "work", workKind: "approval" },
+      { kind: "notice" },
+    ]);
+    expect(result.rows[1]).not.toHaveProperty("toolName");
+    expect(result.rows[4]).not.toHaveProperty("toolName");
+    expect(JSON.stringify(result)).not.toContain("private tool");
   });
 
   it("keeps the newest 512 activities and inserts one stable omission notice", () => {

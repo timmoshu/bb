@@ -53,6 +53,8 @@ type RoomActivityRow = {
   label: RoomActivityLabel;
   startedAt: number;
   completedAt: number | null;
+  /** Private `toolName` only. Omitted when the source row has no public-safe name. */
+  toolName?: string;
 };
 
 type RoomActor = {
@@ -173,6 +175,7 @@ const MAX_TOTAL_ROWS = 768;
 const MAX_SERIALIZED_BYTES = 2_097_152;
 const MAX_CONVERSATION_TEXT_BYTES = 65_536;
 const MAX_DISPLAY_NAME_BYTES = 400;
+const MAX_TOOL_NAME_BYTES = 256;
 const MAX_QUESTIONS = 4;
 const MAX_OPTIONS = 4;
 const MAX_QUESTION_ID_BYTES = 256;
@@ -413,11 +416,56 @@ function completedAt(row: TimelineActivitySourceRow): number | null {
   }
 }
 
+function privateActivityToolName(
+  row: TimelineActivitySourceRow,
+): string | undefined {
+  switch (row.workKind) {
+    case "tool":
+    case "delegation":
+      return row.toolName;
+    case "command":
+    case "file-change":
+    case "web-search":
+    case "web-fetch":
+    case "image-view":
+    case "workflow":
+      return undefined;
+  }
+}
+
+/** ADR 0008 exception: one payload-free public name, no args/paths/results. */
+function projectActivityToolName(
+  row: TimelineActivitySourceRow,
+  input: ProjectWorkTogetherRoomTimelineInput,
+): string | undefined {
+  const raw = privateActivityToolName(row);
+  if (raw === undefined) return undefined;
+  const toolName = raw.normalize("NFC");
+  const baseName = toolName.split(":").at(-1) ?? toolName;
+  if (
+    toolName.trim().length === 0 ||
+    WORK_TOGETHER_ROOM_VISIBLE_DISALLOWED_CONTROL.test(toolName) ||
+    Buffer.byteLength(toolName, "utf8") > MAX_TOOL_NAME_BYTES ||
+    toolName.includes(input.privateThreadId) ||
+    toolName.includes(input.environmentId) ||
+    toolName.includes(input.projectId) ||
+    (input.attachedStreams ?? []).some((attached) =>
+      toolName.includes(attached.privateThreadId),
+    ) ||
+    // Skill invocations stay generic Tool rows, not named work-trace steps.
+    baseName.trim() === "Skill"
+  ) {
+    return undefined;
+  }
+  return toolName;
+}
+
 function projectActivity(
   row: TimelineActivitySourceRow,
   input: ProjectWorkTogetherRoomTimelineInput,
 ): RoomActivityRow {
   const kind = activityKind(row);
+  const toolName = projectActivityToolName(row, input);
   return {
     kind: "activity",
     id: rowId(input, row.id),
@@ -426,6 +474,7 @@ function projectActivity(
     label: ACTIVITY_LABELS[kind],
     startedAt: finiteTimestamp(row.startedAt),
     completedAt: completedAt(row),
+    ...(toolName === undefined ? {} : { toolName }),
   };
 }
 
