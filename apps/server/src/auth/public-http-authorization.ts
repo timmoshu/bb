@@ -12,7 +12,12 @@ import {
 import type { MiddlewareHandler, Next } from "hono";
 import type { Context } from "hono";
 import { ApiError } from "../errors.js";
-import { authorize } from "../request-context.js";
+import {
+  authorize,
+  requirePrincipal,
+} from "../request-context.js";
+import { isLocalOwnerPrincipal } from "./local-owner-adapter.js";
+import { isWorkTogetherRoomScopedThreadCreate } from "./work-together-room-thread-create-scope.js";
 
 /** Namespaced action prefix for registry-issued public HTTP operations. */
 export const PUBLIC_HTTP_ACTION_PREFIX = "publicHttp." as const;
@@ -314,6 +319,14 @@ export const UNTYPED_PUBLIC_HTTP_INVENTORY = Object.freeze([
 /**
  * Conservative workspace-member allowlist (typed operations only). All untyped
  * plugin/catalog/skills operations stay outside both signed role allowlists.
+ *
+ * `threads.create` is member-level (parity with `threads.send` / Room
+ * `message.send`). Non-local-owner principals may use it only for a Room
+ * child spawn: the public HTTP middleware requires a current reservation on
+ * this cell whose primary thread, reserved environment, and Room project
+ * match the body. Failures deny as a generic allowlist miss. Stock
+ * local-owner mode stays independently allow-all and does not apply this
+ * scope check.
  */
 export const PUBLIC_HTTP_MEMBER_OPERATION_NAMES = Object.freeze([
   "projects.get",
@@ -341,6 +354,7 @@ export const PUBLIC_HTTP_MEMBER_OPERATION_NAMES = Object.freeze([
   "environments.paths",
   "threads.get",
   "threads.childSummary",
+  "threads.create",
   "threads.send",
   "threads.admitSend",
   "threads.admitSteer",
@@ -1032,10 +1046,20 @@ export function createPublicHttpAuthorizationMiddleware(args: {
 }): MiddlewareHandler {
   return async (context: Context, next: Next) => {
     const pathname = context.req.path;
-    const resolved = scopePublicHttpOperationToStandardProject(
+    let resolved = scopePublicHttpOperationToStandardProject(
       args.db,
       resolvePublicHttpOperation(context.req.method, pathname),
     );
+    if (
+      resolved.kind === "mapped" &&
+      resolved.operationName === "threads.create" &&
+      shouldEnforceWorkTogetherRoomThreadCreateScope(context)
+    ) {
+      const body = await readClonedJsonBody(context);
+      if (!isWorkTogetherRoomScopedThreadCreate(args.db, body)) {
+        resolved = unmappedResult();
+      }
+    }
     const decision = await authorize(
       context,
       resolved.action,
@@ -1049,4 +1073,28 @@ export function createPublicHttpAuthorizationMiddleware(args: {
     }
     return next();
   };
+}
+
+/**
+ * Stock local-owner create stays independently allow-all. Every other
+ * attached principal — including signed Work Together — must pass the Room
+ * reservation checks. Fail closed when no principal is attached: authorize
+ * still returns 401, and we never skip the body gate.
+ */
+function shouldEnforceWorkTogetherRoomThreadCreateScope(
+  context: Context,
+): boolean {
+  try {
+    return !isLocalOwnerPrincipal(requirePrincipal(context));
+  } catch {
+    return true;
+  }
+}
+
+async function readClonedJsonBody(context: Context): Promise<unknown> {
+  try {
+    return await context.req.raw.clone().json();
+  } catch {
+    return undefined;
+  }
 }

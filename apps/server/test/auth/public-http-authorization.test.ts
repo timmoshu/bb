@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,7 @@ import {
   ensurePersonalProject,
   migrate,
   noopNotifier,
+  reserveWorkTogetherRoomResources,
   upsertHost,
   type DbConnection,
 } from "@bb/db";
@@ -48,6 +50,10 @@ import {
 } from "../../src/request-context.js";
 import { createApp } from "../../src/server.js";
 import { errorToResponse } from "../../src/errors.js";
+import {
+  isWorkTogetherRoomScopedThreadCreate,
+  readWorkTogetherRoomThreadCreateScope,
+} from "../../src/auth/work-together-room-thread-create-scope.js";
 import { createTestAppHarness, testLogger } from "../helpers/test-app.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -171,6 +177,56 @@ function requestFrom(args: {
       }
       return undefined;
     },
+  };
+}
+
+function reserveScratchRoom(db: DbConnection) {
+  return reserveWorkTogetherRoomResources(db, {
+    bindingId: randomUUID(),
+    workspaceId: randomUUID(),
+    taskId: randomUUID(),
+    cellId: CELL_ID,
+    candidateHostId: randomUUID(),
+    workKind: "conversation",
+    environmentTemplate: "isolated-scratch",
+  });
+}
+
+function persistReservedStandardProject(
+  db: DbConnection,
+  reservation: ReturnType<typeof reserveScratchRoom>,
+) {
+  const host = upsertHost(db, noopNotifier, {
+    id: `host_${reservation.projectId.slice(-10)}`,
+    name: "room-host",
+    type: "persistent",
+  });
+  createProject(db, noopNotifier, {
+    name: "Room project",
+    projectId: reservation.projectId,
+    projectSourceId: reservation.projectSourceId,
+    source: {
+      type: "local_path",
+      hostId: host.id,
+      path: `/tmp/${reservation.projectId}`,
+    },
+  });
+}
+
+function roomChildCreateBody(
+  reservation: ReturnType<typeof reserveScratchRoom>,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    projectId: reservation.projectId,
+    parentThreadId: reservation.primaryThreadId,
+    environment: {
+      type: "reuse",
+      environmentId: reservation.environmentId,
+    },
+    origin: "app",
+    input: [{ type: "text", text: "spawn" }],
+    ...overrides,
   };
 }
 
@@ -581,6 +637,10 @@ describe("public HTTP authorization predicates", () => {
         operationName,
       );
     }
+    expect(PUBLIC_HTTP_MEMBER_OPERATION_NAMES).toContain("threads.create");
+    expect(PUBLIC_HTTP_WORK_TOGETHER_OWNER_OPERATION_NAMES).toContain(
+      "threads.create",
+    );
   });
 });
 
@@ -850,8 +910,8 @@ describe("signed Work Together public HTTP authorize", () => {
     expect(allowed.sort()).toEqual(
       [...PUBLIC_HTTP_WORK_TOGETHER_OWNER_OPERATION_NAMES].sort(),
     );
-    expect(allowed).toHaveLength(64);
-    expect(denied).toHaveLength(185 - 64);
+    expect(allowed).toHaveLength(65);
+    expect(denied).toHaveLength(185 - 65);
   });
 
   it("allows members only the conservative allowlist and denies the rest", async () => {
@@ -894,8 +954,8 @@ describe("signed Work Together public HTTP authorize", () => {
     expect(allowed.sort()).toEqual(
       [...PUBLIC_HTTP_MEMBER_OPERATION_NAMES].sort(),
     );
-    expect(allowed).toHaveLength(61);
-    expect(denied).toHaveLength(185 - 61);
+    expect(allowed).toHaveLength(62);
+    expect(denied).toHaveLength(185 - 62);
   });
 
   it("fails closed for malformed action/resource, stale revision, and removal", async () => {
@@ -1206,6 +1266,297 @@ describe("createApp public HTTP authorization boundary", () => {
       expect(sendBody.message).not.toBe("Not found");
     } finally {
       await server.closeWebSockets();
+      await harness.cleanup();
+    }
+  });
+});
+
+describe("Work Together Room scoped threads.create", () => {
+  it("accepts only reuse of the reserved Room primary, environment, and project", () => {
+    const db = createTestDatabase();
+    const room = reserveScratchRoom(db);
+    persistReservedStandardProject(db, room);
+    const other = reserveScratchRoom(db);
+    persistReservedStandardProject(db, other);
+
+    expect(
+      readWorkTogetherRoomThreadCreateScope(roomChildCreateBody(room)),
+    ).toEqual({
+      parentThreadId: room.primaryThreadId,
+      projectId: room.projectId,
+      environmentId: room.environmentId,
+    });
+    expect(
+      isWorkTogetherRoomScopedThreadCreate(db, roomChildCreateBody(room)),
+    ).toBe(true);
+
+    expect(
+      isWorkTogetherRoomScopedThreadCreate(
+        db,
+        roomChildCreateBody(room, { parentThreadId: undefined }),
+      ),
+    ).toBe(false);
+    expect(
+      isWorkTogetherRoomScopedThreadCreate(
+        db,
+        roomChildCreateBody(room, {
+          environment: { type: "project-default" },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isWorkTogetherRoomScopedThreadCreate(
+        db,
+        roomChildCreateBody(room, {
+          environment: {
+            type: "host",
+            hostId: "host_23456789ab",
+            workspace: { type: "unmanaged", path: null },
+          },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isWorkTogetherRoomScopedThreadCreate(
+        db,
+        roomChildCreateBody(room, { projectId: other.projectId }),
+      ),
+    ).toBe(false);
+    expect(
+      isWorkTogetherRoomScopedThreadCreate(
+        db,
+        roomChildCreateBody(room, { parentThreadId: other.primaryThreadId }),
+      ),
+    ).toBe(false);
+    expect(
+      isWorkTogetherRoomScopedThreadCreate(
+        db,
+        roomChildCreateBody(room, {
+          environment: {
+            type: "reuse",
+            environmentId: other.environmentId,
+          },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isWorkTogetherRoomScopedThreadCreate(
+        db,
+        roomChildCreateBody(room, {
+          environment: {
+            type: "reuse",
+            environmentId: room.environmentId,
+            extra: true,
+          },
+        }),
+      ),
+    ).toBe(true);
+
+    const unprovisioned = reserveScratchRoom(db);
+    expect(
+      isWorkTogetherRoomScopedThreadCreate(
+        db,
+        roomChildCreateBody(unprovisioned),
+      ),
+    ).toBe(true);
+
+    const host = upsertHost(db, noopNotifier, {
+      id: "host-standard-unscoped",
+      name: "standard-unscoped",
+      type: "persistent",
+    });
+    const { project: standardProject } = createProject(db, noopNotifier, {
+      name: "ordinary project",
+      source: {
+        type: "local_path",
+        hostId: host.id,
+        path: "/tmp/ordinary-project",
+      },
+    });
+    const standardEnvironment = createEnvironment(db, noopNotifier, {
+      projectId: standardProject.id,
+      hostId: host.id,
+      workspaceProvisionType: "unmanaged",
+      status: "ready",
+    });
+    const standardThread = createThread(db, noopNotifier, {
+      projectId: standardProject.id,
+      providerId: "test-provider",
+      status: "idle",
+    });
+    expect(
+      isWorkTogetherRoomScopedThreadCreate(db, {
+        projectId: standardProject.id,
+        parentThreadId: standardThread.id,
+        environment: {
+          type: "reuse",
+          environmentId: standardEnvironment.id,
+        },
+        origin: "app",
+        input: [{ type: "text", text: "spawn" }],
+      }),
+    ).toBe(false);
+  });
+
+  it("authorizes signed member and owner Room child create and 404s unscoped bodies", async () => {
+    const db = createTestDatabase();
+    const room = reserveScratchRoom(db);
+    persistReservedStandardProject(db, room);
+    const other = reserveScratchRoom(db);
+    persistReservedStandardProject(db, other);
+
+    const { publicKey } = await testKeys();
+    const membership = createWorkTogetherMembershipMemoryFake();
+    membership.setMembership({
+      cellId: CELL_ID,
+      subject: SUBJECT,
+      role: "member",
+      membershipRevision: "1",
+    });
+    const replayGuard = createSqlitePrincipalAssertionReplayGuard({ db });
+    const policy = createWorkTogetherPrincipalPolicy({
+      issuer: ISSUER,
+      cellId: CELL_ID,
+      workspaceId: WORKSPACE_ID,
+      verificationKeys: { [KID]: publicKey },
+      membershipVerifier: membership,
+      replayGuard,
+      now: () => BASE_TIME_MS,
+    });
+
+    let handlerCalls = 0;
+    const app = new Hono();
+    app.onError((error) => errorToResponse(error, testLogger));
+    app.use("*", createResolvePrincipalMiddleware(policy, "http"));
+    app.use("*", createPublicHttpAuthorizationMiddleware({ db }));
+    app.post("/api/v1/threads", async (context) => {
+      handlerCalls += 1;
+      await context.req.json();
+      return new Response("created", { status: 201 });
+    });
+
+    let jti = 1;
+    async function signedCreate(body: unknown): Promise<Response> {
+      const token = await signClaims(
+        baseClaims({
+          jti: `cccccccc-cccc-4ccc-8ccc-${String(jti).padStart(12, "0")}`,
+          request_method: "POST",
+          request_target: "/api/v1/threads",
+        }),
+      );
+      jti += 1;
+      return app.request("/api/v1/threads", {
+        method: "POST",
+        headers: {
+          [WORK_TOGETHER_PRINCIPAL_ASSERTION_HEADER]: token,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    }
+
+    const authorized = await signedCreate(roomChildCreateBody(room));
+    expect(authorized.status).toBe(201);
+    expect(handlerCalls).toBe(1);
+    await expect(authorized.text()).resolves.toBe("created");
+
+    const extraEnvironmentKeys = await signedCreate(
+      roomChildCreateBody(room, {
+        environment: {
+          type: "reuse",
+          environmentId: room.environmentId,
+          extra: true,
+        },
+      }),
+    );
+    expect(extraEnvironmentKeys.status).toBe(201);
+    expect(handlerCalls).toBe(2);
+
+    const matching = roomChildCreateBody(room);
+    const { parentThreadId: _parent, ...missingParent } = matching;
+    const ordinaryHost = upsertHost(db, noopNotifier, {
+      id: "host-ordinary-http",
+      name: "ordinary-http",
+      type: "persistent",
+    });
+    const { project: ordinaryProject } = createProject(db, noopNotifier, {
+      name: "ordinary http project",
+      source: {
+        type: "local_path",
+        hostId: ordinaryHost.id,
+        path: "/tmp/ordinary-http-project",
+      },
+    });
+    const ordinaryEnvironment = createEnvironment(db, noopNotifier, {
+      projectId: ordinaryProject.id,
+      hostId: ordinaryHost.id,
+      workspaceProvisionType: "unmanaged",
+      status: "ready",
+    });
+    const ordinaryThread = createThread(db, noopNotifier, {
+      projectId: ordinaryProject.id,
+      providerId: "test-provider",
+      status: "idle",
+    });
+    const denials = [
+      missingParent,
+      roomChildCreateBody(room, {
+        environment: { type: "project-default" },
+      }),
+      roomChildCreateBody(room, { projectId: other.projectId }),
+      roomChildCreateBody(room, { parentThreadId: other.primaryThreadId }),
+      {
+        projectId: ordinaryProject.id,
+        parentThreadId: ordinaryThread.id,
+        environment: {
+          type: "reuse",
+          environmentId: ordinaryEnvironment.id,
+        },
+        origin: "app",
+        input: [{ type: "text", text: "spawn" }],
+      },
+    ];
+    for (const body of denials) {
+      const response = await signedCreate(body);
+      expect(response.status).toBe(404);
+      await expect(response.json()).resolves.toEqual({
+        code: "not_found",
+        message: "Not found",
+      });
+    }
+    expect(handlerCalls).toBe(2);
+
+    const otherRoom = await signedCreate(roomChildCreateBody(other));
+    expect(otherRoom.status).toBe(201);
+    expect(handlerCalls).toBe(3);
+
+    membership.setMembership({
+      cellId: CELL_ID,
+      subject: SUBJECT,
+      role: "owner",
+      membershipRevision: "1",
+    });
+    const ownerAuthorized = await signedCreate(roomChildCreateBody(room));
+    expect(ownerAuthorized.status).toBe(201);
+    expect(handlerCalls).toBe(4);
+  });
+
+  it("does not tighten local-owner thread create", async () => {
+    const harness = await createTestAppHarness();
+    try {
+      const response = await harness.app.request("/api/v1/threads", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          origin: "app",
+          input: [{ type: "text", text: "local create" }],
+        }),
+      });
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.code).toBe("invalid_request");
+      expect(body.message).not.toBe("Not found");
+    } finally {
       await harness.cleanup();
     }
   });
