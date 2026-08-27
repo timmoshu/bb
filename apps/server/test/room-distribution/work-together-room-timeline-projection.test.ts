@@ -419,15 +419,16 @@ describe("Work Together Room timeline projection", () => {
             tool("wt_subagent_spawn", "room_subagent_spawn", 4),
             tool("mcp_tool", "docs:lookup", 5),
             tool("shell_tool", "Bash", 6),
-            tool("labeled_tool", "workstream_completeness", 7, {
+            delegation("delegate_agent", "Agent", 7),
+            tool("labeled_tool", "workstream_completeness", 8, {
               statusLabels: {
                 pending: "Judging workstream completeness",
                 completed: "Judged workstream completeness",
               },
             }),
-            command("shell_command", 8),
-            tool("skill_tool", "Skill", 9),
-            tool("mcp_skill", "plugin:Skill", 10),
+            command("shell_command", 9),
+            tool("skill_tool", "Skill", 10),
+            tool("mcp_skill", "plugin:Skill", 11),
             question({ id: "ask_user_question" }),
           ],
         }),
@@ -450,6 +451,11 @@ describe("Work Together Room timeline projection", () => {
       { activityKind: "tool", label: "Tool", toolName: "docs:lookup" },
       { activityKind: "tool", label: "Tool", toolName: "Bash" },
       {
+        activityKind: "delegation",
+        label: "Delegated work",
+        toolName: "Agent",
+      },
+      {
         activityKind: "tool",
         label: "Tool",
         toolName: "workstream_completeness",
@@ -459,14 +465,17 @@ describe("Work Together Room timeline projection", () => {
       { activityKind: "tool", label: "Tool" },
       { kind: "work", workKind: "question" },
     ]);
-    expect(result.rows[7]).not.toHaveProperty("toolName");
     expect(result.rows[8]).not.toHaveProperty("toolName");
     expect(result.rows[9]).not.toHaveProperty("toolName");
+    expect(result.rows[10]).not.toHaveProperty("toolName");
     const wire = JSON.stringify(result);
     expect(wire).not.toContain("secret query sentinel");
     expect(wire).not.toContain("/secret/path/sentinel");
     expect(wire).not.toContain("secret output sentinel");
     expect(wire).not.toContain("secret command sentinel");
+    expect(wire).not.toContain("private delegated child");
+    expect(wire).not.toContain("private subagent type sentinel");
+    expect(wire).not.toContain("private description sentinel");
     expect(wire).not.toContain("Judging workstream completeness");
     expect(wire).not.toContain("Judged workstream completeness");
     expect(wire).not.toContain("statusLabels");
@@ -482,7 +491,9 @@ describe("Work Together Room timeline projection", () => {
             tool("control_name", "Read\u0000", 2),
             tool("oversized_name", "x".repeat(257), 3),
             tool("private_thread_name", PRIVATE_THREAD_ID, 4),
-            tool("nfc_name", "e\u0301", 5),
+            tool("private_environment_name", ENVIRONMENT_ID, 5),
+            tool("private_project_name", PROJECT_ID, 6),
+            tool("nfc_name", "e\u0301", 7),
           ],
         }),
       }),
@@ -492,8 +503,13 @@ describe("Work Together Room timeline projection", () => {
     expect(result.rows[1]).not.toHaveProperty("toolName");
     expect(result.rows[2]).not.toHaveProperty("toolName");
     expect(result.rows[3]).not.toHaveProperty("toolName");
-    expect(result.rows[4]).toMatchObject({ toolName: "é" });
-    expect(JSON.stringify(result)).not.toContain(PRIVATE_THREAD_ID);
+    expect(result.rows[4]).not.toHaveProperty("toolName");
+    expect(result.rows[5]).not.toHaveProperty("toolName");
+    expect(result.rows[6]).toMatchObject({ toolName: "é" });
+    const wire = JSON.stringify(result);
+    expect(wire).not.toContain(PRIVATE_THREAD_ID);
+    expect(wire).not.toContain(ENVIRONMENT_ID);
+    expect(wire).not.toContain(PROJECT_ID);
   });
 
   it("projects visible conversation copy through scalar identity scrubbing", () => {
@@ -941,8 +957,7 @@ describe("Work Together Room timeline projection", () => {
         value.forEach(visit);
         return;
       }
-      const isActivity =
-        "kind" in value && (value as { kind?: unknown }).kind === "activity";
+      const isActivity = "kind" in value && value.kind === "activity";
       for (const [key, child] of Object.entries(value)) {
         if (key === "toolName") {
           expect(isActivity).toBe(true);
