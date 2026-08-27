@@ -97,7 +97,14 @@ jobs:
 
       - name: Install bubblewrap for Room sandbox cases
         if: ${{ matrix.shard == 'integration' }}
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          # Ubuntu 24.04+ blocks unprivileged user namespaces by default; bwrap
+          # needs them to configure loopback inside --unshare-net.
+          if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = "1" ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          bwrap --die-with-parent --unshare-net --ro-bind / / --proc /proc true
 
       - name: Test
         run: pnpm exec turbo run test ${{ matrix.filter }} --cache-dir=.turbo/cache --output-logs=new-only

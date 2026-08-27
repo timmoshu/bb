@@ -643,12 +643,12 @@ describe("admitThreadCommand", () => {
       `);
 
       // Re-apply the shipped rebuild migrations that touch this table: 0093
-      // (interaction columns), 0094 (branch.publish pointers), then 0103
+      // (interaction columns), 0094 (branch.publish pointers), then 0104
       // (typed result publication fields).
       for (const migration of [
         "0093_crazy_thing.sql",
         "0094_chilly_nitro.sql",
-        "0103_room_result_publish.sql",
+        "0104_room_result_publish.sql",
       ]) {
         const migrationSql = readFileSync(
           new URL(`../../drizzle/${migration}`, import.meta.url),
