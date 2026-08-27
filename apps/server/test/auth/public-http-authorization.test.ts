@@ -1350,7 +1350,7 @@ describe("Work Together Room scoped threads.create", () => {
           },
         }),
       ),
-    ).toBe(false);
+    ).toBe(true);
 
     const unprovisioned = reserveScratchRoom(db);
     expect(
@@ -1358,7 +1358,7 @@ describe("Work Together Room scoped threads.create", () => {
         db,
         roomChildCreateBody(unprovisioned),
       ),
-    ).toBe(false);
+    ).toBe(true);
 
     const host = upsertHost(db, noopNotifier, {
       id: "host-standard-unscoped",
@@ -1460,6 +1460,18 @@ describe("Work Together Room scoped threads.create", () => {
     expect(handlerCalls).toBe(1);
     await expect(authorized.text()).resolves.toBe("created");
 
+    const extraEnvironmentKeys = await signedCreate(
+      roomChildCreateBody(room, {
+        environment: {
+          type: "reuse",
+          environmentId: room.environmentId,
+          extra: true,
+        },
+      }),
+    );
+    expect(extraEnvironmentKeys.status).toBe(201);
+    expect(handlerCalls).toBe(2);
+
     const matching = roomChildCreateBody(room);
     const { parentThreadId: _parent, ...missingParent } = matching;
     const ordinaryHost = upsertHost(db, noopNotifier, {
@@ -1512,11 +1524,11 @@ describe("Work Together Room scoped threads.create", () => {
         message: "Not found",
       });
     }
-    expect(handlerCalls).toBe(1);
+    expect(handlerCalls).toBe(2);
 
     const otherRoom = await signedCreate(roomChildCreateBody(other));
     expect(otherRoom.status).toBe(201);
-    expect(handlerCalls).toBe(2);
+    expect(handlerCalls).toBe(3);
 
     membership.setMembership({
       cellId: CELL_ID,
@@ -1526,7 +1538,7 @@ describe("Work Together Room scoped threads.create", () => {
     });
     const ownerAuthorized = await signedCreate(roomChildCreateBody(room));
     expect(ownerAuthorized.status).toBe(201);
-    expect(handlerCalls).toBe(3);
+    expect(handlerCalls).toBe(4);
   });
 
   it("does not tighten local-owner thread create", async () => {

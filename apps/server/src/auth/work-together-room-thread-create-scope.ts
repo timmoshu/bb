@@ -12,7 +12,8 @@ export type WorkTogetherRoomThreadCreateScope = {
 
 /**
  * Read the three Room child-create facts from a public HTTP body.
- * Extra environment keys, missing parent, or a non-reuse environment fail closed.
+ * Missing parent or a non-reuse environment fail closed. Extra environment
+ * keys are ignored: create-thread validation strips them the same way.
  */
 export function readWorkTogetherRoomThreadCreateScope(
   body: unknown,
@@ -34,10 +35,6 @@ export function readWorkTogetherRoomThreadCreateScope(
   if (!isPlainObject(environment)) {
     return null;
   }
-  const keys = Object.keys(environment).sort();
-  if (keys.length !== 2 || keys[0] !== "environmentId" || keys[1] !== "type") {
-    return null;
-  }
   const environmentId = environment.environmentId;
   if (
     environment.type !== "reuse" ||
@@ -57,6 +54,11 @@ export function readWorkTogetherRoomThreadCreateScope(
  * True only when the body is a Room child spawn onto a current reservation
  * on this cell: parent is that Room's primary thread, environment is exact
  * reuse of the reserved environment, and projectId is the Room project.
+ *
+ * The reservation row is the scope source of truth. A missing project row
+ * does not deny a matching spawn (provision may still be writing it). If the
+ * project exists, it must be standard — the same closed kind other WT HTTP
+ * operations require.
  */
 export function isWorkTogetherRoomScopedThreadCreate(
   db: DbConnection,
@@ -86,14 +88,9 @@ export function isWorkTogetherRoomScopedThreadCreate(
   }
 
   const project = getProject(db, reservation.projectId);
-  return project !== null && project.kind === "standard";
+  return project === null || project.kind === "standard";
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
