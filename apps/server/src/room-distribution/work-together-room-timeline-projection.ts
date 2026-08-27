@@ -449,8 +449,11 @@ function projectActivityToolName(
     toolName.includes(input.privateThreadId) ||
     toolName.includes(input.environmentId) ||
     toolName.includes(input.projectId) ||
+    (input.attachedStreams ?? []).some((attached) =>
+      toolName.includes(attached.privateThreadId),
+    ) ||
     // Skill invocations stay generic Tool rows, not named work-trace steps.
-    baseName === "Skill"
+    baseName.trim() === "Skill"
   ) {
     return undefined;
   }

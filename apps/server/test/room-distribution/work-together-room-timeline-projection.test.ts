@@ -482,9 +482,15 @@ describe("Work Together Room timeline projection", () => {
     expect(wire).not.toContain("toolArgs");
   });
 
-  it("omits toolName when the private identifier is blank, oversized, or identity-bearing", () => {
+  it("omits toolName when the private identifier is blank, oversized, identity-bearing, or a Skill", () => {
     const result = projectWorkTogetherRoomTimeline(
       input({
+        attachedStreams: [
+          {
+            privateThreadId: "thr_private_attached_001",
+            publicStreamId: "child_stream_002",
+          },
+        ],
         timeline: timeline({
           rows: [
             tool("blank_name", "   ", 1),
@@ -493,7 +499,9 @@ describe("Work Together Room timeline projection", () => {
             tool("private_thread_name", PRIVATE_THREAD_ID, 4),
             tool("private_environment_name", ENVIRONMENT_ID, 5),
             tool("private_project_name", PROJECT_ID, 6),
-            tool("nfc_name", "e\u0301", 7),
+            tool("private_attached_thread_name", "thr_private_attached_001", 7),
+            tool("spaced_skill_name", "plugin:Skill ", 8),
+            tool("nfc_name", "e\u0301", 9),
           ],
         }),
       }),
@@ -505,11 +513,14 @@ describe("Work Together Room timeline projection", () => {
     expect(result.rows[3]).not.toHaveProperty("toolName");
     expect(result.rows[4]).not.toHaveProperty("toolName");
     expect(result.rows[5]).not.toHaveProperty("toolName");
-    expect(result.rows[6]).toMatchObject({ toolName: "é" });
+    expect(result.rows[6]).not.toHaveProperty("toolName");
+    expect(result.rows[7]).not.toHaveProperty("toolName");
+    expect(result.rows[8]).toMatchObject({ toolName: "é" });
     const wire = JSON.stringify(result);
     expect(wire).not.toContain(PRIVATE_THREAD_ID);
     expect(wire).not.toContain(ENVIRONMENT_ID);
     expect(wire).not.toContain(PROJECT_ID);
+    expect(wire).not.toContain("thr_private_attached_001");
   });
 
   it("projects visible conversation copy through scalar identity scrubbing", () => {
