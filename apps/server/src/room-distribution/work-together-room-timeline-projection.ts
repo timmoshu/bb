@@ -433,6 +433,7 @@ function privateActivityToolName(
   }
 }
 
+/** ADR 0008 exception: one payload-free public name, no args/paths/results. */
 function projectActivityToolName(
   row: TimelineActivitySourceRow,
   input: ProjectWorkTogetherRoomTimelineInput,
