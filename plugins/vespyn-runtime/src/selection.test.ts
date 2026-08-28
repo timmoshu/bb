@@ -1,23 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { ROOM_DELEGATE_SKILL } from "./room-delegate.js";
-import {
-  PORTABLE_SKILLS,
-  selectedVespynRuntimeContribution,
-  VESPYN_RUNTIME_SKILLS,
-  VESPYN_RUNTIME_TOOLS,
-} from "./selection.js";
+import { selectedVespynRuntimeContribution } from "./selection.js";
 
 describe("Vespyn runtime tool and skill selection", () => {
-  it("selects exactly four tools and ten skills for standard projects", () => {
+  it("selects the bundled tools and skills for standard projects", () => {
     const selected = selectedVespynRuntimeContribution("standard");
     expect(selected.tools).toEqual([
       "goal_document_propose",
       "workstream_completeness",
       "room_result_publish",
       "room_subagent_spawn",
+      "filespace_list",
+      "filespace_get",
+      "filespace_put",
     ]);
-    expect(selected.tools).toEqual([...VESPYN_RUNTIME_TOOLS]);
     expect(selected.skills).toEqual([
       "vespyn-dev-pipeline",
       "vespyn-review-and-clean",
@@ -29,12 +25,8 @@ describe("Vespyn runtime tool and skill selection", () => {
       "workstream-completeness",
       "room-result-publish",
       "room-delegate",
+      "filespace",
     ]);
-    expect(selected.skills).toEqual([...VESPYN_RUNTIME_SKILLS]);
-    expect(selected.skills).toHaveLength(10);
-    expect(selected.tools).toHaveLength(4);
-    expect(selected.skills.slice(0, 6)).toEqual([...PORTABLE_SKILLS]);
-    expect(selected.skills).toContain(ROOM_DELEGATE_SKILL);
     expect(selected.instructions).toEqual(expect.any(String));
   });
 

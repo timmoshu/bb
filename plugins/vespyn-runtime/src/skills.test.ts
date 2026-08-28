@@ -9,7 +9,7 @@ import { VESPYN_RUNTIME_SKILLS } from "./selection.js";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("bundled skill catalog", () => {
-  it("ships exactly the ten selected skills", async () => {
+  it("ships exactly the selected skills", async () => {
     const entries = await readdir(join(root, "skills"), { withFileTypes: true });
     const names = entries
       .filter((entry) => entry.isDirectory())
