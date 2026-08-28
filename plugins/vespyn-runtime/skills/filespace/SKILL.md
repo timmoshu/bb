@@ -27,4 +27,5 @@ file tools and Git Deliver. Scratch for filespace is `$SCRATCH/filespace/`
 Folders are path prefixes. Putting `notes/decision.md` creates `notes/`. No
 preset taxonomy.
 
-Do not put secrets, coordinator URLs, or git-root paths in the user-facing reply.
+Lists show at most 100 paths; narrow `prefix` to continue. Do not put secrets,
+coordinator URLs, or git-root paths in the user-facing reply.

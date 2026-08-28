@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { PluginAgentToolResult } from "@get-bb/plugin-sdk";
 
 import {
+  buildFilespaceGetRequest,
+  buildFilespaceListRequest,
   buildFilespacePutRequest,
   postFilespace,
 } from "./filespace.js";
@@ -336,10 +338,80 @@ describe("room_subagent_spawn request + HTTP", () => {
   });
 });
 
-describe("filespace_put request + HTTP", () => {
-  it("posts filespace.put and refuses a git-root path without calling the coordinator", async () => {
+describe("filespace request + HTTP", () => {
+  it("posts and formats filespace.list", async () => {
     const captured = { headers: {} as IncomingMessage["headers"], body: "", url: "" };
     const origin = await listen((req, res) => {
+      jsonOnEnd(req, res, 200, {
+        data: {
+          objects: [
+            { path: "notes/decision.md" },
+            { path: "notes/plan.md" },
+          ],
+        },
+      }, captured);
+    });
+    const body = buildFilespaceListRequest({
+      threadId: "thr_23456789ab",
+      projectId: "proj_standard1",
+      prefix: "notes/",
+    });
+
+    const result = structuredResult(await postFilespace({
+      coordinatorOrigin: origin,
+      secret: SECRET,
+      body,
+      signal: new AbortController().signal,
+    }));
+
+    expect(result.content).toEqual([{
+      type: "text",
+      text: "Filespace list: notes/decision.md, notes/plan.md",
+    }]);
+    expect(captured.url).toBe("/cell-tools/v1/filespace");
+    expectCellToolHeaders(captured.headers, SECRET);
+    expect(JSON.parse(captured.body)).toEqual(body);
+    expectNoSecrets(result, SECRET, origin);
+  });
+
+  it("posts and formats filespace.get", async () => {
+    const captured = { headers: {} as IncomingMessage["headers"], body: "", url: "" };
+    const origin = await listen((req, res) => {
+      jsonOnEnd(req, res, 200, {
+        data: {
+          path: "notes/decision.md",
+          generation: 2,
+          text: "Durable decision.",
+        },
+      }, captured);
+    });
+    const body = buildFilespaceGetRequest({
+      threadId: "thr_23456789ab",
+      projectId: "proj_standard1",
+      path: "notes/decision.md",
+    });
+
+    const result = structuredResult(await postFilespace({
+      coordinatorOrigin: origin,
+      secret: SECRET,
+      body,
+      signal: new AbortController().signal,
+    }));
+
+    expect(result.content).toEqual([{
+      type: "text",
+      text: "Filespace get: notes/decision.md generation=2\nDurable decision.",
+    }]);
+    expectCellToolHeaders(captured.headers, SECRET);
+    expect(JSON.parse(captured.body)).toEqual(body);
+    expectNoSecrets(result, SECRET, origin);
+  });
+
+  it("posts filespace.put and refuses invalid paths without calling the coordinator", async () => {
+    const captured = { headers: {} as IncomingMessage["headers"], body: "", url: "" };
+    let requests = 0;
+    const origin = await listen((req, res) => {
+      requests += 1;
       jsonOnEnd(req, res, 201, {
         data: { path: "notes/decision.md", generation: 1 },
       }, captured);
@@ -360,22 +432,93 @@ describe("filespace_put request + HTTP", () => {
       signal: new AbortController().signal,
     }));
     expect(result.isError).toBeFalsy();
+    expect(result.content).toEqual([{
+      type: "text",
+      text: "Filespace put: notes/decision.md generation=1",
+    }]);
     expect(captured.url).toBe("/cell-tools/v1/filespace");
-    expect(JSON.parse(captured.body).kind).toBe("filespace.put");
+    expectCellToolHeaders(captured.headers, SECRET);
+    expect(JSON.parse(captured.body)).toEqual(body);
+    expectNoSecrets(result, SECRET, origin);
 
-    const refused = structuredResult(await postFilespace({
+    for (const path of [".", "..", "../outside", "notes/../outside", "/absolute"]) {
+      const refused = structuredResult(await postFilespace({
+        coordinatorOrigin: origin,
+        secret: SECRET,
+        body: buildFilespacePutRequest({
+          threadId: "thr_23456789ab",
+          projectId: "proj_standard1",
+          path,
+          expectedGeneration: 0,
+          text: "nope",
+          mediaType: "text/markdown",
+        }),
+        signal: new AbortController().signal,
+      }));
+      expect(refused.isError).toBe(true);
+    }
+    expect(requests).toBe(1);
+  });
+
+  it("fails closed on malformed or oversized success payloads", async () => {
+    let payload: unknown = {};
+    const origin = await listen((req, res) => {
+      jsonOnEnd(req, res, 200, payload, { headers: {}, body: "", url: "" });
+    });
+    const body = buildFilespaceGetRequest({
+      threadId: "thr_23456789ab",
+      projectId: "proj_standard1",
+      path: "notes/decision.md",
+    });
+
+    const malformed = structuredResult(await postFilespace({
       coordinatorOrigin: origin,
       secret: SECRET,
-      body: buildFilespacePutRequest({
+      body,
+      signal: new AbortController().signal,
+    }));
+    expect(malformed.isError).toBe(true);
+
+    payload = {
+      data: {
+        path: "notes/decision.md",
+        generation: 1,
+        text: "x".repeat(65_537),
+      },
+    };
+    const oversized = structuredResult(await postFilespace({
+      coordinatorOrigin: origin,
+      secret: SECRET,
+      body,
+      signal: new AbortController().signal,
+    }));
+    expect(oversized.isError).toBe(true);
+  });
+
+  it("bounds list output and directs the caller to narrow the prefix", async () => {
+    const origin = await listen((req, res) => {
+      jsonOnEnd(req, res, 200, {
+        data: {
+          objects: Array.from({ length: 101 }, (_, index) => ({
+            path: `notes/${index}.md`,
+          })),
+        },
+      }, { headers: {}, body: "", url: "" });
+    });
+    const result = structuredResult(await postFilespace({
+      coordinatorOrigin: origin,
+      secret: SECRET,
+      body: buildFilespaceListRequest({
         threadId: "thr_23456789ab",
         projectId: "proj_standard1",
-        path: "../",
-        expectedGeneration: 0,
-        text: "nope",
-        mediaType: "text/markdown",
       }),
       signal: new AbortController().signal,
     }));
-    expect(refused.isError).toBe(true);
+
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("… 1 more; narrow prefix to continue"),
+    });
+    expect(String(result.content[0]?.text)).not.toContain("notes/100.md");
   });
 });
