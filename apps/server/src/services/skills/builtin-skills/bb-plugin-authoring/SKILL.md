@@ -901,10 +901,12 @@ throwing callback fail closed for that plugin only. Dynamic `instructions` are
 truncated to 4096 characters.
 
 Resolution happens for `thread.start` and `turn.submit`. A selected tool set
-takes effect only when the provider session is next started/resumed; BB never
-hot-mutates a running provider session. Instructions follow the same rule: a
-live provider session keeps the instructions it was constructed with, and
-changed instructions apply when the session is next constructed.
+takes effect when the provider session is next started/resumed; BB never
+hot-mutates a running provider session. If the selected set grows while a
+session is live, the next new turn reconstructs that session so the selected
+tools are present, or fails closed if reconstruction is unsafe (active turn
+or open background work). Instructions follow the same construction rule
+unless that reconstruct also rebuilds the session.
 Skill catalog changes follow the daemon's established runtime policy: a busy
 environment keeps its current staged catalog until a safe relaunch. Side chats
 evaluate `configure` with `sideChat: true`; returned tool, skill, and dynamic

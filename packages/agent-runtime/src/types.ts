@@ -226,6 +226,13 @@ export interface RunTurnArgs {
   clientRequestId: ClientTurnRequestId;
   options: AgentRuntimeExecutionOptions;
   instructions?: string;
+  /**
+   * Selected dynamic tools for this turn. When provided, the runtime
+   * reconstructs the live provider session if any selected name is missing
+   * from the hosted catalog, or fails closed if reconstruct is unsafe.
+   * Omitted means do not enforce the selected set (legacy callers).
+   */
+  dynamicTools?: DynamicTool[];
 }
 
 export interface SteerTurnArgs {

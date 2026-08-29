@@ -1,4 +1,8 @@
 export { createAgentRuntime } from "./runtime.js";
+export {
+  STALE_PROVIDER_SESSION_CATALOG_CODE,
+  StaleProviderSessionCatalogError,
+} from "./session-dynamic-tools.js";
 export { fingerprintAcpLaunchSpec } from "./acp-launch-spec-fingerprint.js";
 export { createConfiguredPiSettingsManager } from "./pi/bridge/configured-services.js";
 export {

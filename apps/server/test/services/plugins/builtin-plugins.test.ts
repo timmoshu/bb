@@ -1267,7 +1267,7 @@ describe("server-owned Work Together runtime", () => {
     await rm(workDir, { recursive: true, force: true });
   });
 
-  it("loads the real package with four tools and one ten-skill root", async () => {
+  it("loads the real package with seven tools and one eleven-skill root", async () => {
     process.env.BB_WORK_TOGETHER_COORDINATOR_ORIGIN =
       "https://work.vespyn.com";
     process.env.BB_WORK_TOGETHER_CELL_TOOL_SECRET = "s".repeat(32);
@@ -1294,6 +1294,9 @@ describe("server-owned Work Together runtime", () => {
       "workstream_completeness",
       "room_result_publish",
       "room_subagent_spawn",
+      "filespace_list",
+      "filespace_get",
+      "filespace_put",
     ]);
     expect(
       service
