@@ -1544,6 +1544,182 @@ rl.on("line", (line) => {
     });
   });
 
+  describe("provider session catalog", () => {
+    function testDynamicTool(name: string) {
+      return {
+        name,
+        description: name,
+        inputSchema: { type: "object" },
+      };
+    }
+
+    const fourToolCatalog = [
+      testDynamicTool("goal_document_propose"),
+      testDynamicTool("workstream_completeness"),
+      testDynamicTool("room_result_publish"),
+      testDynamicTool("room_subagent_spawn"),
+    ];
+    const sevenToolCatalog = [
+      ...fourToolCatalog,
+      testDynamicTool("filespace_list"),
+      testDynamicTool("filespace_get"),
+      testDynamicTool("filespace_put"),
+    ];
+
+    it("reconstructs a live session when the selected tool set has grown", async () => {
+      const recordedCommands: AdapterCommand[] = [];
+      const runtime = createAgentRuntimeWithAdapters({
+        workspacePath: tmpDir,
+        onEvent: () => undefined,
+        onToolCall: async () => ({
+          contentItems: [{ type: "inputText", text: "ok" }],
+          success: true,
+        }),
+        adapterFactory: () =>
+          createRecordingAdapter({ recordedCommands, scriptPath }),
+      });
+
+      await runtime.startThread({
+        environmentId: "env-1",
+        threadId: "t1",
+        projectId: "p1",
+        providerId: "fake",
+        instructions: "four tools",
+        dynamicTools: fourToolCatalog,
+        options: fullRuntimeOptions,
+      });
+
+      await runtime.runTurn({
+        clientRequestId: "creq_catalog_grow01",
+        threadId: "t1",
+        input: [promptTextInput({ text: "use filespace" })],
+        instructions: "seven tools",
+        dynamicTools: sevenToolCatalog,
+        options: fullRuntimeOptions,
+      });
+
+      const resumeCommand = findLastRecordedCommand(
+        recordedCommands,
+        "thread/resume",
+      );
+      expect(resumeCommand?.type).toBe("thread/resume");
+      if (!resumeCommand || resumeCommand.type !== "thread/resume") {
+        throw new Error("Expected thread/resume command");
+      }
+      expect(resumeCommand.dynamicTools?.map((tool) => tool.name)).toEqual([
+        "goal_document_propose",
+        "workstream_completeness",
+        "room_result_publish",
+        "room_subagent_spawn",
+        "filespace_list",
+        "filespace_get",
+        "filespace_put",
+      ]);
+      expect(resumeCommand.options).toMatchObject({
+        instructions: "seven tools",
+      });
+      expect(
+        findLastRecordedCommand(recordedCommands, "turn/start"),
+      ).toBeDefined();
+
+      await runtime.shutdown();
+    });
+
+    it("does not reconstruct when the live catalog already has the selected tools", async () => {
+      const recordedCommands: AdapterCommand[] = [];
+      const runtime = createAgentRuntimeWithAdapters({
+        workspacePath: tmpDir,
+        onEvent: () => undefined,
+        onToolCall: async () => ({
+          contentItems: [{ type: "inputText", text: "ok" }],
+          success: true,
+        }),
+        adapterFactory: () =>
+          createRecordingAdapter({ recordedCommands, scriptPath }),
+      });
+
+      await runtime.startThread({
+        environmentId: "env-1",
+        threadId: "t1",
+        projectId: "p1",
+        providerId: "fake",
+        dynamicTools: sevenToolCatalog,
+        options: fullRuntimeOptions,
+      });
+
+      await runtime.runTurn({
+        clientRequestId: "creq_catalog_keep01",
+        threadId: "t1",
+        input: [promptTextInput({ text: "continue" })],
+        dynamicTools: sevenToolCatalog,
+        options: fullRuntimeOptions,
+      });
+
+      expect(
+        recordedCommands.some((command) => command.type === "thread/resume"),
+      ).toBe(false);
+
+      await runtime.shutdown();
+    });
+
+    it("fails closed when selected tools are missing during an active turn", async () => {
+      const events: ThreadEvent[] = [];
+      const runtime = createAgentRuntimeWithAdapters({
+        workspacePath: tmpDir,
+        onEvent: (event) => {
+          events.push(event);
+        },
+        onToolCall: async () => ({
+          contentItems: [{ type: "inputText", text: "ok" }],
+          success: true,
+        }),
+        adapterFactory: () => createFakeAdapter(scriptPath),
+      });
+
+      await runtime.startThread({
+        environmentId: "env-1",
+        threadId: "t1",
+        projectId: "p1",
+        providerId: "fake",
+        dynamicTools: fourToolCatalog,
+        options: fullRuntimeOptions,
+      });
+
+      await runtime.runTurn({
+        clientRequestId: "creq_catalog_open01",
+        threadId: "t1",
+        input: [promptTextInput({ text: "delay:60000 keep this turn open" })],
+        dynamicTools: fourToolCatalog,
+        options: fullRuntimeOptions,
+      });
+      await waitForThreadTurnStarted({
+        events,
+        providerId: "fake",
+        runtime,
+        threadId: "t1",
+      });
+
+      await expect(
+        runtime.runTurn({
+          clientRequestId: "creq_catalog_fail01",
+          threadId: "t1",
+          input: [promptTextInput({ text: "use filespace" })],
+          dynamicTools: sevenToolCatalog,
+          options: fullRuntimeOptions,
+        }),
+      ).rejects.toMatchObject({
+        code: "stale_provider_session_catalog",
+        message: expect.stringContaining(
+          "filespace_list, filespace_get, filespace_put",
+        ),
+      });
+      expect(runtime.getActiveTurnId("t1")).toBeTruthy();
+
+      await runtime.stopThread({ threadId: "t1" });
+      await runtime.shutdown();
+    });
+  });
+
   describe("errors", () => {
     it("rejects runTurn for unknown thread", async () => {
       const runtime = createAgentRuntimeWithAdapters({

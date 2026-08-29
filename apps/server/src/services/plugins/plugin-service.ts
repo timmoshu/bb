@@ -353,8 +353,9 @@ export interface PluginService {
    * Native tools of running plugins (bb.agents.registerTool), ordered by
    * plugin id then registration order, deduped defensively (first wins —
    * registration already blocks collisions). Appended to a session's
-   * dynamicTools at thread.start/turn.submit time; changes apply on the
-   * NEXT session start.
+   * dynamicTools at thread.start/turn.submit time. A grown selected set
+   * reconstructs the live provider session on the next new turn, or fails
+   * closed if reconstruct is unsafe.
    */
   listAgentTools(): PluginAgentToolContribution[];
   /**

@@ -1,6 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AgentRuntimeOptions } from "@bb/agent-runtime";
+import {
+  StaleProviderSessionCatalogError,
+  type AgentRuntimeOptions,
+} from "@bb/agent-runtime";
 import type {
   HostDaemonAcpLaunchSpec,
   HostDaemonCommand,
@@ -1303,6 +1306,140 @@ describe("thread command dispatch", () => {
     expect(harness.runtimeState.steeredTurnInstructions).toBe(
       "Be a helpful coding agent.",
     );
+  });
+
+  it("passes the selected dynamic tool catalog to runTurn", async () => {
+    const harness = createHarness();
+    await harness.manager.ensureEnvironment({
+      environmentId: "env-1",
+      workspacePath: "/tmp/env-1",
+    });
+    harness.threadControls.setProviderSession("thread-1", {
+      providerId: "fake",
+      providerThreadId: "provider-1",
+    });
+
+    const dynamicTools = [
+      {
+        name: "filespace_list",
+        description: "List Goal files",
+        inputSchema: { type: "object" },
+      },
+      {
+        name: "filespace_get",
+        description: "Read a Goal file",
+        inputSchema: { type: "object" },
+      },
+      {
+        name: "filespace_put",
+        description: "Write a Goal file",
+        inputSchema: { type: "object" },
+      },
+    ];
+
+    await dispatchCommand(
+      {
+        type: "turn.submit",
+        environmentId: "env-1",
+        threadId: "thread-1",
+        requestId: nextClientRequestId(),
+        input: [textPromptInput("list goal files")],
+        options: {
+          model: "gpt-5",
+          serviceTier: "default",
+          reasoningLevel: "medium",
+          workflowsEnabled: false,
+          permissionMode: "full",
+          permissionScope: "full",
+          approvalReviewer: null,
+          permissionEscalation: null,
+        },
+        resumeContext: {
+          workspaceContext: {
+            workspacePath: "/tmp/env-1",
+            workspaceProvisionType: "unmanaged",
+          },
+          projectId: "project-1",
+          providerId: "fake",
+          providerThreadId: "provider-1",
+          instructions: "Use filespace_list.",
+          dynamicTools,
+          injectedSkillSources: [],
+          instructionMode: "append",
+        },
+        target: { mode: "start" },
+      },
+      harness.dispatchOptions(),
+    );
+
+    expect(harness.runtimeState.ranTurnDynamicTools).toEqual(dynamicTools);
+  });
+
+  it("surfaces a stale live session catalog as an expected dispatch error", async () => {
+    const harness = createHarness();
+    await harness.manager.ensureEnvironment({
+      environmentId: "env-1",
+      workspacePath: "/tmp/env-1",
+    });
+    harness.threadControls.setProviderSession("thread-1", {
+      providerId: "fake",
+      providerThreadId: "provider-1",
+    });
+    harness.runtime.runTurn = async () => {
+      throw new StaleProviderSessionCatalogError({
+        missing: ["filespace_list", "filespace_get", "filespace_put"],
+        reason: "open-background-work",
+      });
+    };
+
+    await expect(
+      dispatchCommand(
+        {
+          type: "turn.submit",
+          environmentId: "env-1",
+          threadId: "thread-1",
+          requestId: nextClientRequestId(),
+          input: [textPromptInput("list goal files")],
+          options: {
+            model: "gpt-5",
+            serviceTier: "default",
+            reasoningLevel: "medium",
+            workflowsEnabled: false,
+            permissionMode: "full",
+            permissionScope: "full",
+            approvalReviewer: null,
+            permissionEscalation: null,
+          },
+          resumeContext: {
+            workspaceContext: {
+              workspacePath: "/tmp/env-1",
+              workspaceProvisionType: "unmanaged",
+            },
+            projectId: "project-1",
+            providerId: "fake",
+            providerThreadId: "provider-1",
+            instructions: "Use filespace_list.",
+            dynamicTools: [
+              {
+                name: "filespace_list",
+                description: "List Goal files",
+                inputSchema: { type: "object" },
+              },
+            ],
+            injectedSkillSources: [],
+            instructionMode: "append",
+          },
+          target: { mode: "start" },
+        },
+        harness.dispatchOptions(),
+      ),
+    ).rejects.toMatchObject({
+      name: "ExpectedCommandDispatchError",
+      code: "stale_provider_session_catalog",
+      message: expect.stringContaining(
+        "filespace_list, filespace_get, filespace_put",
+      ),
+    });
   });
 
   it("reports a resident thread idle after its turn completes and active again on the next turn.submit", async () => {

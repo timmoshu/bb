@@ -89,6 +89,7 @@ interface FakeRuntimeState {
   listedModelsProviderId: string | undefined;
   listedModelsAcpLaunchSpec: HostDaemonAcpLaunchSpec | undefined;
   ranTurnClientRequestId: ClientTurnRequestId | undefined;
+  ranTurnDynamicTools: DynamicTool[] | undefined;
   ranTurnInput: PromptInput[] | undefined;
   ranTurnInputGroups: PromptInput[][] | undefined;
   ranTurnInstructions: string | undefined;
@@ -281,6 +282,7 @@ export function createFakeRuntime() {
     listedModelsProviderId: undefined,
     listedModelsAcpLaunchSpec: undefined,
     ranTurnClientRequestId: undefined,
+    ranTurnDynamicTools: undefined,
     ranTurnInput: undefined,
     ranTurnInputGroups: undefined,
     ranTurnInstructions: undefined,
@@ -390,6 +392,7 @@ export function createFakeRuntime() {
       state.ranTurnText =
         firstInput?.type === "text" ? firstInput.text : undefined;
       state.ranTurnClientRequestId = args.clientRequestId;
+      state.ranTurnDynamicTools = args.dynamicTools;
       state.ranTurnInput = args.input;
       state.ranTurnInputGroups = args.inputGroups;
       state.ranTurnOptions = args.options;

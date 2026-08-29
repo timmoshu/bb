@@ -72,6 +72,10 @@ import {
   threadIdentityResultSchema,
 } from "./thread-identity.js";
 import { fingerprintAcpLaunchSpec } from "./acp-launch-spec-fingerprint.js";
+import {
+  reconcileSelectedDynamicTools,
+  StaleProviderSessionCatalogError,
+} from "./session-dynamic-tools.js";
 
 interface ReconfigureThreadIfNeededArgs {
   options: AgentRuntimeExecutionOptions;
@@ -79,6 +83,13 @@ interface ReconfigureThreadIfNeededArgs {
 }
 
 interface RestartCodexThreadForNextTurnArgs {
+  instructions: string | undefined;
+  options: AgentRuntimeExecutionOptions;
+  threadId: string;
+}
+
+interface EnsureSelectedDynamicToolsOnLiveSessionArgs {
+  dynamicTools: DynamicTool[] | undefined;
   instructions: string | undefined;
   options: AgentRuntimeExecutionOptions;
   threadId: string;
@@ -851,6 +862,64 @@ function createAgentRuntimeInternal(
     });
   }
 
+  async function ensureSelectedDynamicToolsOnLiveSession(
+    args: EnsureSelectedDynamicToolsOnLiveSessionArgs,
+  ): Promise<void> {
+    if (args.dynamicTools === undefined) {
+      return;
+    }
+
+    const currentConfig = threadRuntimeConfigs.get(args.threadId);
+    if (!currentConfig) {
+      return;
+    }
+
+    const decision = reconcileSelectedDynamicTools({
+      hasActiveTurn: turnState.getActiveTurnId(args.threadId) !== null,
+      hasOpenBackgroundWork: backgroundWorkState.hasOpenThreadWork(
+        args.threadId,
+      ),
+      hostedToolNames: (currentConfig.dynamicTools ?? []).map(
+        (tool) => tool.name,
+      ),
+      selectedToolNames: args.dynamicTools.map((tool) => tool.name),
+    });
+    if (decision.action === "keep") {
+      return;
+    }
+    if (decision.action === "fail") {
+      throw new StaleProviderSessionCatalogError({
+        missing: decision.missing,
+        reason: decision.reason,
+      });
+    }
+
+    options.onStderr?.(
+      `Reconstructing provider session catalog for thread "${args.threadId}": adding ${decision.missing.join(", ")}.`,
+    );
+
+    const providerThreadId = requireProviderThreadId(args.threadId);
+    const resumeInstructions = args.instructions ?? currentConfig.instructions;
+    await runtime.resumeThread({
+      environmentId: currentConfig.environmentId,
+      threadId: args.threadId,
+      ...(currentConfig.projectId !== undefined
+        ? { projectId: currentConfig.projectId }
+        : {}),
+      providerThreadId,
+      providerId: currentConfig.providerId,
+      options: args.options,
+      ...(resumeInstructions !== undefined
+        ? { instructions: resumeInstructions }
+        : {}),
+      dynamicTools: args.dynamicTools,
+      ...(currentConfig.disallowedTools !== undefined
+        ? { disallowedTools: currentConfig.disallowedTools }
+        : {}),
+      instructionMode: currentConfig.instructionMode,
+    });
+  }
+
   function isAcceptedThreadArchiveError(
     commandType: "thread/archive" | "thread/unarchive",
     message: string,
@@ -1505,6 +1574,7 @@ function createAgentRuntimeInternal(
               clientRequestId,
               options: effectiveExecOpts,
               instructions,
+              ...(dynamicTools !== undefined ? { dynamicTools } : {}),
             });
           }
 
@@ -1845,6 +1915,7 @@ function createAgentRuntimeInternal(
       clientRequestId,
       options: execOpts,
       instructions,
+      dynamicTools,
     }) {
       return runThreadOperation({
         threadId,
@@ -1860,8 +1931,14 @@ function createAgentRuntimeInternal(
             options: effectiveExecOpts,
             instructions,
           });
-          // An account restart replaces a thread-scoped Codex process, so
-          // resolve the process again before constructing the turn command.
+          await ensureSelectedDynamicToolsOnLiveSession({
+            threadId,
+            options: effectiveExecOpts,
+            instructions,
+            dynamicTools,
+          });
+          // An account restart or catalog reconstruct may replace the
+          // hosted session, so resolve the process again before the turn.
           const proc = requireProviderProcessForThread(threadId);
           assertProviderSupportsExecutionOptions({
             adapter: proc.adapter,

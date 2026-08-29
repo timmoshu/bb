@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import semver from "semver";
+import { StaleProviderSessionCatalogError } from "@bb/agent-runtime";
 import type { PromptInput } from "@bb/domain";
 import type { HostDaemonCommandResult } from "@bb/host-daemon-contract";
 import { resolveContainedPath } from "@bb/process-utils";
@@ -334,16 +335,24 @@ async function runSubmittedTurn(
   command: TurnSubmitCommand,
   entry: RuntimeEntry,
 ): Promise<HostDaemonCommandResult<"turn.submit">> {
-  await entry.runtime.runTurn({
-    threadId: command.threadId,
-    input: command.input,
-    ...(command.inputGroups !== undefined
-      ? { inputGroups: command.inputGroups }
-      : {}),
-    clientRequestId: command.requestId,
-    options: command.options,
-    instructions: command.resumeContext.instructions,
-  });
+  try {
+    await entry.runtime.runTurn({
+      threadId: command.threadId,
+      input: command.input,
+      ...(command.inputGroups !== undefined
+        ? { inputGroups: command.inputGroups }
+        : {}),
+      clientRequestId: command.requestId,
+      options: command.options,
+      instructions: command.resumeContext.instructions,
+      dynamicTools: command.resumeContext.dynamicTools,
+    });
+  } catch (error) {
+    if (error instanceof StaleProviderSessionCatalogError) {
+      throw new ExpectedCommandDispatchError(error.code, error.message);
+    }
+    throw error;
+  }
   return { appliedAs: "new-turn" };
 }
 

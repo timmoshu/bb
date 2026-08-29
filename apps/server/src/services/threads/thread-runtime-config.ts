@@ -112,9 +112,11 @@ interface DynamicToolContribution {
 
 /**
  * The session's dynamic tool set: built-ins first, then native plugin tools
- * (bb.agents.registerTool), resolved live at thread.start/turn.submit — so
- * tool-set changes apply on the next session start, never mid-session.
- * Conditionally selected plugin tools follow configure() like any thread.
+ * (bb.agents.registerTool), resolved live at thread.start/turn.submit. A grown
+ * selected set reconstructs the live provider session on the next new turn
+ * (thread/resume), or fails closed if reconstruct is unsafe. BB never
+ * silently omits selected tools from a live session. Conditionally selected
+ * plugin tools follow configure() like any thread.
  */
 function resolveDynamicTools(
   pluginTools: ReturnType<typeof listPluginAgentTools>,
