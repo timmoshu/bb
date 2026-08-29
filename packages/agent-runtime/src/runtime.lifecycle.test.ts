@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadEvent } from "@bb/domain";
+import type { HostDaemonAcpLaunchSpec } from "@bb/host-daemon-contract";
 import type {
   AdapterCommand,
   ProviderCommandPlan,
@@ -1621,6 +1622,63 @@ rl.on("line", (line) => {
       expect(
         findLastRecordedCommand(recordedCommands, "turn/start"),
       ).toBeDefined();
+
+      await runtime.shutdown();
+    });
+
+    it("reconstructs an ACP session on the same provider process", async () => {
+      const recordedCommands: AdapterCommand[] = [];
+      const acpLaunchSpec: HostDaemonAcpLaunchSpec = {
+        displayName: "Custom ACP",
+        command: "custom-agent",
+        args: ["serve"],
+        env: { CUSTOM_AGENT_TOKEN: "token" },
+      };
+      let adapterFactoryCalls = 0;
+      const runtime = createAgentRuntimeWithAdapters({
+        workspacePath: tmpDir,
+        onEvent: () => undefined,
+        onToolCall: async () => ({
+          contentItems: [{ type: "inputText", text: "ok" }],
+          success: true,
+        }),
+        adapterFactory: () => {
+          adapterFactoryCalls += 1;
+          return createRecordingAdapter({ recordedCommands, scriptPath });
+        },
+      });
+
+      await runtime.startThread({
+        environmentId: "env-1",
+        threadId: "t1",
+        projectId: "p1",
+        providerId: "acp-cursor",
+        acpLaunchSpec,
+        dynamicTools: fourToolCatalog,
+        options: fullRuntimeOptions,
+      });
+      expect(adapterFactoryCalls).toBe(1);
+
+      await runtime.runTurn({
+        clientRequestId: "creq_catalog_acp01",
+        threadId: "t1",
+        input: [promptTextInput({ text: "use filespace" })],
+        dynamicTools: sevenToolCatalog,
+        options: fullRuntimeOptions,
+      });
+
+      expect(adapterFactoryCalls).toBe(1);
+      const resumeCommand = findLastRecordedCommand(
+        recordedCommands,
+        "thread/resume",
+      );
+      expect(resumeCommand?.type).toBe("thread/resume");
+      if (!resumeCommand || resumeCommand.type !== "thread/resume") {
+        throw new Error("Expected thread/resume command");
+      }
+      expect(resumeCommand.dynamicTools?.map((tool) => tool.name)).toEqual(
+        sevenToolCatalog.map((tool) => tool.name),
+      );
 
       await runtime.shutdown();
     });

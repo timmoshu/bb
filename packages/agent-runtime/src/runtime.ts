@@ -207,6 +207,7 @@ const PREPARED_THREAD_REWIND_TTL_MS = 5 * 60_000;
 const PREPARED_THREAD_REWIND_RETRY_MS = 30_000;
 
 interface ThreadRuntimeConfig {
+  acpLaunchSpec?: HostDaemonAcpLaunchSpec;
   dynamicTools?: DynamicTool[];
   disallowedTools?: readonly string[];
   environmentId: string;
@@ -906,6 +907,9 @@ function createAgentRuntimeInternal(
       ...(currentConfig.projectId !== undefined
         ? { projectId: currentConfig.projectId }
         : {}),
+      ...(currentConfig.acpLaunchSpec !== undefined
+        ? { acpLaunchSpec: currentConfig.acpLaunchSpec }
+        : {}),
       providerThreadId,
       providerId: currentConfig.providerId,
       options: args.options,
@@ -1458,6 +1462,7 @@ function createAgentRuntimeInternal(
             threadId,
           });
           setThreadRuntimeConfig(threadId, {
+            ...(acpLaunchSpec !== undefined ? { acpLaunchSpec } : {}),
             dynamicTools,
             disallowedTools,
             environmentId,
@@ -1813,6 +1818,7 @@ function createAgentRuntimeInternal(
             threadId,
           });
           setThreadRuntimeConfig(threadId, {
+            ...(acpLaunchSpec !== undefined ? { acpLaunchSpec } : {}),
             dynamicTools,
             disallowedTools,
             environmentId,
