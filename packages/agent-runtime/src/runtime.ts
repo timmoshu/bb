@@ -901,27 +901,38 @@ function createAgentRuntimeInternal(
 
     const providerThreadId = requireProviderThreadId(args.threadId);
     const resumeInstructions = args.instructions ?? currentConfig.instructions;
-    await runtime.resumeThread({
-      environmentId: currentConfig.environmentId,
-      threadId: args.threadId,
-      ...(currentConfig.projectId !== undefined
-        ? { projectId: currentConfig.projectId }
-        : {}),
-      ...(currentConfig.acpLaunchSpec !== undefined
-        ? { acpLaunchSpec: currentConfig.acpLaunchSpec }
-        : {}),
-      providerThreadId,
-      providerId: currentConfig.providerId,
-      options: args.options,
-      ...(resumeInstructions !== undefined
-        ? { instructions: resumeInstructions }
-        : {}),
-      dynamicTools: args.dynamicTools,
-      ...(currentConfig.disallowedTools !== undefined
-        ? { disallowedTools: currentConfig.disallowedTools }
-        : {}),
-      instructionMode: currentConfig.instructionMode,
-    });
+    const hostedConfigBeforeReconstruct = currentConfig;
+    try {
+      await runtime.resumeThread({
+        environmentId: currentConfig.environmentId,
+        threadId: args.threadId,
+        ...(currentConfig.projectId !== undefined
+          ? { projectId: currentConfig.projectId }
+          : {}),
+        ...(currentConfig.acpLaunchSpec !== undefined
+          ? { acpLaunchSpec: currentConfig.acpLaunchSpec }
+          : {}),
+        providerThreadId,
+        providerId: currentConfig.providerId,
+        options: args.options,
+        ...(resumeInstructions !== undefined
+          ? { instructions: resumeInstructions }
+          : {}),
+        dynamicTools: args.dynamicTools,
+        ...(currentConfig.disallowedTools !== undefined
+          ? { disallowedTools: currentConfig.disallowedTools }
+          : {}),
+        instructionMode: currentConfig.instructionMode,
+      });
+    } catch (error) {
+      // resumeThread writes the hosted catalog before the provider accepts
+      // thread/resume. Keep the pre-reconstruct catalog so the next new turn
+      // reconstructs again instead of keeping a claimed-but-missing set.
+      if (threadRuntimeConfigs.has(args.threadId)) {
+        threadRuntimeConfigs.set(args.threadId, hostedConfigBeforeReconstruct);
+      }
+      throw error;
+    }
   }
 
   function isAcceptedThreadArchiveError(

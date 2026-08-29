@@ -1720,6 +1720,75 @@ rl.on("line", (line) => {
       await runtime.shutdown();
     });
 
+    it("retries reconstruct after a failed resume instead of keeping a claimed catalog", async () => {
+      const recordedCommands: AdapterCommand[] = [];
+      let resumeAttempts = 0;
+      const runtime = createAgentRuntimeWithAdapters({
+        workspacePath: tmpDir,
+        onEvent: () => undefined,
+        onToolCall: async () => ({
+          contentItems: [{ type: "inputText", text: "ok" }],
+          success: true,
+        }),
+        adapterFactory: () => {
+          const adapter = createRecordingAdapter({
+            recordedCommands,
+            scriptPath,
+          });
+          return {
+            ...adapter,
+            buildCommandPlan(command) {
+              if (command.type === "thread/resume") {
+                resumeAttempts += 1;
+                if (resumeAttempts === 1) {
+                  adapter.buildCommandPlan(command);
+                  throw new Error("provider resume failed");
+                }
+              }
+              return adapter.buildCommandPlan(command);
+            },
+          };
+        },
+      });
+
+      await runtime.startThread({
+        environmentId: "env-1",
+        threadId: "t1",
+        projectId: "p1",
+        providerId: "fake",
+        dynamicTools: fourToolCatalog,
+        options: fullRuntimeOptions,
+      });
+
+      await expect(
+        runtime.runTurn({
+          clientRequestId: "creq_catalog_retry01",
+          threadId: "t1",
+          input: [promptTextInput({ text: "use filespace" })],
+          dynamicTools: sevenToolCatalog,
+          options: fullRuntimeOptions,
+        }),
+      ).rejects.toThrow("provider resume failed");
+
+      await runtime.runTurn({
+        clientRequestId: "creq_catalog_retry02",
+        threadId: "t1",
+        input: [promptTextInput({ text: "use filespace" })],
+        dynamicTools: sevenToolCatalog,
+        options: fullRuntimeOptions,
+      });
+
+      expect(resumeAttempts).toBe(2);
+      expect(
+        recordedCommands.filter((command) => command.type === "thread/resume"),
+      ).toHaveLength(2);
+      expect(
+        findLastRecordedCommand(recordedCommands, "turn/start"),
+      ).toBeDefined();
+
+      await runtime.shutdown();
+    });
+
     it("fails closed when selected tools are missing during an active turn", async () => {
       const events: ThreadEvent[] = [];
       const runtime = createAgentRuntimeWithAdapters({
