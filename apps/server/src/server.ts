@@ -22,6 +22,10 @@ import { registerPluginRoutes } from "./routes/plugins.js";
 import { registerPluginCatalogRoutes } from "./routes/plugin-catalog.js";
 import { registerSkillsRegistryRoutes } from "./routes/skills-registry.js";
 import {
+  assertWorkTogetherIntegrationToken,
+  registerWorkTogetherCoordinationRoutes,
+} from "./routes/work-together-coordination.js";
+import {
   createPluginService,
   type PluginService,
 } from "./services/plugins/plugin-service.js";
@@ -124,6 +128,7 @@ interface CreateAppOptions {
   bbAppArtifactService?: BbAppArtifactService;
   slowApiRequestLogThresholdMs?: number;
   staticDir?: string;
+  workTogetherIntegrationToken?: string;
 }
 
 interface StaticResponseHeadersArgs {
@@ -407,6 +412,9 @@ export function createApp(
   deps: ServerAppDeps,
   options?: CreateAppOptions,
 ): ServerApp {
+  if (options?.workTogetherIntegrationToken !== undefined) {
+    assertWorkTogetherIntegrationToken(options.workTogetherIntegrationToken);
+  }
   const app = new Hono();
   const { injectWebSocket, upgradeWebSocket, wss } = createNodeWebSocket({
     app,
@@ -600,6 +608,13 @@ export function createApp(
   registerPluginCatalogRoutes(publicApi, pluginCatalogService);
   registerPluginRoutes(publicApi, deps, pluginService);
   registerSkillsRegistryRoutes(publicApi, deps);
+  if (options?.workTogetherIntegrationToken !== undefined) {
+    registerWorkTogetherCoordinationRoutes(
+      app,
+      deps,
+      options.workTogetherIntegrationToken,
+    );
+  }
   app.route("/api/v1", publicApi);
   app.use("/api/v1/*", () => {
     throw new ApiError(404, "not_found", "Not found");

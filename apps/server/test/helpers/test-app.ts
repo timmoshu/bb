@@ -76,6 +76,7 @@ export type TestAppHarnessConfigOverrides = Partial<ServerRuntimeConfig> & {
     declaration: PluginProviderDeclaration;
     pluginId: string;
   }[];
+  workTogetherIntegrationToken?: string;
 };
 
 export const testLogger = {
@@ -138,6 +139,8 @@ export async function createTestAppHarness(
     terminalCloseTimeoutMs,
     nativeRootsClock,
     seedFirstPartyProviders = true,
+    extraProviders,
+    workTogetherIntegrationToken,
     ...configOverrides
   } = overrides;
   const dataDir = await mkdtemp(join(tmpdir(), "bb-server-test-"));
@@ -151,7 +154,7 @@ export async function createTestAppHarness(
   const providerNativeRoots = createProviderNativeRootsCache(
     nativeRootsClock === undefined ? {} : { now: nativeRootsClock },
   );
-  for (const extra of overrides.extraProviders ?? []) {
+  for (const extra of extraProviders ?? []) {
     providerRegistry.register({
       ...buildPluginProviderRegistration({
         available: true,
@@ -269,7 +272,12 @@ export async function createTestAppHarness(
     sharedPorts,
     workspaceReadCaches,
   };
-  const { app, pluginCatalogService, pluginService } = createApp(deps);
+  const { app, pluginCatalogService, pluginService } = createApp(
+    deps,
+    workTogetherIntegrationToken === undefined
+      ? undefined
+      : { workTogetherIntegrationToken },
+  );
 
   return {
     app,

@@ -206,26 +206,33 @@ export function requestThreadProvision(
   const initiator: ThreadTurnInitiator =
     args.startedOnBehalfOf?.initiator ?? "user";
   const senderThreadId = args.startedOnBehalfOf?.senderThreadId ?? null;
-  const target: TurnRequestTarget = { kind: "thread-start" };
-  const request = appendClientTurnEvent(deps, {
-    threadId: args.thread.id,
-    environmentId: args.thread.environmentId,
-    type: "client/turn/requested",
-    input: args.input,
-    execution: args.execution,
-    initiator,
-    senderThreadId,
-    requestMethod: "thread/start",
-    source: "spawn",
-    target,
-  });
-  recordAcceptedPromptHistoryEntry(deps, {
-    thread: args.thread,
-    input: args.input,
-    initiator,
-    target,
-    requestSequence: request.sequence,
-  });
+  const skipInitialTurn = args.input.length === 0 && args.fork === null;
+  let clientRequestId;
+  if (skipInitialTurn) {
+    clientRequestId = createClientTurnRequestId();
+  } else {
+    const target: TurnRequestTarget = { kind: "thread-start" };
+    const request = appendClientTurnEvent(deps, {
+      threadId: args.thread.id,
+      environmentId: args.thread.environmentId,
+      type: "client/turn/requested",
+      input: args.input,
+      execution: args.execution,
+      initiator,
+      senderThreadId,
+      requestMethod: "thread/start",
+      source: "spawn",
+      target,
+    });
+    recordAcceptedPromptHistoryEntry(deps, {
+      thread: args.thread,
+      input: args.input,
+      initiator,
+      target,
+      requestSequence: request.sequence,
+    });
+    clientRequestId = request.requestId;
+  }
   appendClientTurnEvent(deps, {
     threadId: args.thread.id,
     environmentId: args.thread.environmentId,
@@ -237,9 +244,9 @@ export function requestThreadProvision(
 
   const context = createMetadataPendingContext({
     ...args,
-    clientRequestId: request.requestId,
+    clientRequestId,
     input: args.providerInput ?? args.input,
-    seedWithoutRun: args.startedOnBehalfOf !== null,
+    seedWithoutRun: skipInitialTurn || args.startedOnBehalfOf !== null,
   });
   rememberActiveThreadProvisionContext({
     threadId: args.thread.id,

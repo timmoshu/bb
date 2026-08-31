@@ -151,6 +151,7 @@ export function createThreadRecord(
   args: {
     environmentId: string | null;
     request: ThreadCreateServiceRequest;
+    threadId?: string;
   },
 ) {
   const sectionId = args.request.sectionId ?? null;
@@ -160,6 +161,7 @@ export function createThreadRecord(
 
   try {
     const thread = createThread(deps.db, deps.hub, {
+      ...(args.threadId === undefined ? {} : { id: args.threadId }),
       projectId: args.request.projectId,
       environmentId: args.environmentId,
       providerId: args.request.providerId,

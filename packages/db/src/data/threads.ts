@@ -259,6 +259,7 @@ function upsertThreadTitleSearchSegments(
 }
 
 export interface CreateThreadInput {
+  id?: string;
   projectId: string;
   environmentId?: string | null;
   providerId: string;
@@ -280,7 +281,7 @@ export function createThread(
 ) {
   const visibility = input.visibility ?? "visible";
   const now = Date.now();
-  const id = createThreadId();
+  const id = input.id ?? createThreadId();
   const originKind = input.originKind ?? null;
   const thread = db.transaction(
     (tx) => {

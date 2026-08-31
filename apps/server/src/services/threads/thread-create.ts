@@ -90,6 +90,7 @@ interface CreateProvisioningThreadArgs {
   fork: ThreadForkPoint | null;
   request: ThreadCreateServiceRequest;
   providerInput?: ThreadCreateServiceRequestInput["input"];
+  threadId?: string;
 }
 
 interface ResolveForkPointArgs {
@@ -435,6 +436,7 @@ async function createProvisioningThread(
   const thread = createThreadRecord(deps, {
     request: args.request,
     environmentId: args.environmentId,
+    ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
   let execution: Awaited<ReturnType<typeof buildExecutionOptions>>;
   let context: ThreadProvisionContext;
@@ -513,6 +515,7 @@ export async function createThreadFromRequest(
   options: {
     providerInput?: ThreadCreateServiceRequestInput["input"];
     forkSourceEnvironmentId?: string;
+    threadId?: string;
   } = {},
 ) {
   const project = requirePublicProjectForThreadCreate(
@@ -813,6 +816,7 @@ export async function createThreadFromRequest(
     ...(options.providerInput !== undefined
       ? { providerInput: options.providerInput }
       : {}),
+    ...(options.threadId === undefined ? {} : { threadId: options.threadId }),
     request,
   });
   deps.telemetry.capture({
