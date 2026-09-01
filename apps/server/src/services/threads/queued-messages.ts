@@ -38,6 +38,7 @@ import {
   runtimeErrorLogFields,
 } from "../lib/error-log-fields.js";
 import { toThreadQueuedMessage } from "./thread-queued-messages.js";
+import { assertCoordinationContextApplied } from "../work-together-thread-context.js";
 import {
   addRequestIdToTurnSubmitCommandPayload,
   buildExecutionOptions,
@@ -177,6 +178,7 @@ export async function createQueuedMessageForThread(
   args: CreateQueuedMessageForThreadArgs,
 ): Promise<ThreadQueuedMessage> {
   const { payload, thread } = args;
+  assertCoordinationContextApplied(deps.db, thread.id);
   ensureThreadIsWritable(thread);
   await validatePromptAttachmentReferences({
     dataDir: deps.config.dataDir,
@@ -581,6 +583,7 @@ export async function sendQueuedMessage(
   deps: LoggedPendingInteractionWorkSessionDeps,
   args: SendQueuedMessageArgs,
 ): Promise<ThreadQueuedMessage> {
+  assertCoordinationContextApplied(deps.db, args.threadId);
   const queuedMessages = claimQueuedThreadMessageForSend(deps, args);
   const thread = getThread(deps.db, args.threadId);
   if (thread && isManualCompactionActive(deps, thread)) {

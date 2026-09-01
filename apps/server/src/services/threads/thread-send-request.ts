@@ -42,6 +42,7 @@ import {
   resolveMessageSenderThreadId,
   sendThreadMessage,
 } from "./thread-send.js";
+import { assertCoordinationContextApplied } from "../work-together-thread-context.js";
 
 interface AcceptThreadSendRequestArgs {
   payload: SendMessageRequest;
@@ -53,6 +54,7 @@ export async function acceptThreadSendRequest(
   args: AcceptThreadSendRequestArgs,
 ): Promise<SendMessageResponse> {
   const { payload, thread } = args;
+  assertCoordinationContextApplied(deps.db, thread.id);
   const shouldQueue =
     thread.status === "active" &&
     (payload.mode === "queue-if-active" ||

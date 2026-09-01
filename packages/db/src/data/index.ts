@@ -381,6 +381,12 @@ export type {
   CreateDeferredThreadMessageInput,
   DeferredThreadMessageRow,
 } from "./deferred-thread-messages.js";
+export {
+  applyWorkTogetherThreadContext,
+  getWorkTogetherThreadContext,
+  markWorkTogetherCoordinationThread,
+} from "./work-together-thread-contexts.js";
+export type { WorkTogetherThreadContextRow } from "./work-together-thread-contexts.js";
 export type {
   QueuedThreadMessageRow,
   ReorderQueuedThreadMessageResult,

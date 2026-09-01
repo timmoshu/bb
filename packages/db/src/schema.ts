@@ -794,6 +794,19 @@ export const deferredThreadMessages = sqliteTable(
   ],
 );
 
+export const workTogetherThreadContexts = sqliteTable(
+  "work_together_thread_contexts",
+  {
+    threadId: text("thread_id")
+      .primaryKey()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    requestId: text("request_id"),
+    digest: text("digest"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+);
+
 export const queuedThreadMessages = sqliteTable(
   "queued_thread_messages",
   {
