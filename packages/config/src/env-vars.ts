@@ -197,6 +197,15 @@ export const BB_SERVER_LAUNCH_ID_ENV = defineEnvVar<string>({
   parse: parseNonEmptyStringEnvValue,
 });
 
+export const BB_WORK_TOGETHER_INTEGRATION_TOKEN_ENV = defineEnvVar<
+  string | undefined
+>({
+  description:
+    "Shared secret that enables Work Together coordination HTTP routes on this cell. Unset leaves those routes unregistered.",
+  name: "BB_WORK_TOGETHER_INTEGRATION_TOKEN",
+  parse: parseOptionalTrimmedStringEnvValue,
+});
+
 export const BB_APP_SURFACE_ENV = defineEnvVar<AppSurface>({
   description:
     "Internal launcher marker for telemetry attribution. Set by bb-app and desktop launchers.",

@@ -26,6 +26,7 @@ import {
   BB_SERVER_LAUNCH_ID_ENV,
   BB_TELEMETRY_ENV,
   BB_TRANSCRIPTION_ENV,
+  BB_WORK_TOGETHER_INTEGRATION_TOKEN_ENV,
   DEFAULT_BB_APP_URL,
   DEFAULT_BB_APP_SURFACE,
   DEFAULT_BB_APP_VERSION,
@@ -64,6 +65,7 @@ export interface ServerConfig
   BB_SERVER_LAUNCH_ID?: string;
   BB_TELEMETRY: boolean;
   BB_TRANSCRIPTION: string;
+  BB_WORK_TOGETHER_INTEGRATION_TOKEN?: string;
   OPENAI_API_KEY: string;
   featureFlags: FeatureFlags;
 }
@@ -207,6 +209,15 @@ export function loadServerConfig(
     value: readOptionalEnvVar({
       context: loader.context,
       definition: BB_SERVER_LAUNCH_ID_ENV,
+      env: loader.env,
+    }),
+  });
+  assignIfDefined({
+    key: "BB_WORK_TOGETHER_INTEGRATION_TOKEN",
+    target: config,
+    value: readOptionalEnvVar({
+      context: loader.context,
+      definition: BB_WORK_TOGETHER_INTEGRATION_TOKEN_ENV,
       env: loader.env,
     }),
   });

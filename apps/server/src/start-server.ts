@@ -187,7 +187,15 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
       sharedPorts,
       workspaceReadCaches,
     },
-    { staticDir },
+    {
+      staticDir,
+      ...(serverConfig.BB_WORK_TOGETHER_INTEGRATION_TOKEN === undefined
+        ? {}
+        : {
+            workTogetherIntegrationToken:
+              serverConfig.BB_WORK_TOGETHER_INTEGRATION_TOKEN,
+          }),
+    },
   );
   const eventLoopStallMonitor = startEventLoopStallMonitor({ logger });
 

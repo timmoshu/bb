@@ -1,3 +1,4 @@
+import { loadServerConfig } from "@bb/config/server";
 import {
   createThread,
   getThread,
@@ -87,6 +88,33 @@ describe("work-together coordination thread route", () => {
           }),
         });
         expect(extra.status).toBe(400);
+      },
+    );
+  });
+
+  it("registers PUT when createApp receives the token from server config", async () => {
+    const serverConfig = loadServerConfig({
+      env: {
+        BB_DATA_DIR: "/tmp/bb-wt-coord-env",
+        BB_SERVER_PORT: "4444",
+        BB_HOST_DAEMON_PORT: "5555",
+        BB_WORK_TOGETHER_INTEGRATION_TOKEN: TOKEN,
+      },
+    });
+    expect(serverConfig.BB_WORK_TOGETHER_INTEGRATION_TOKEN).toBe(TOKEN);
+    await withTestHarness(
+      { workTogetherIntegrationToken: TOKEN },
+      async (harness) => {
+        const missing = await harness.app.request(PATH, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            projectId: "proj_x",
+            environmentId: "env_x",
+            title: "Goal A",
+          }),
+        });
+        expect(missing.status).toBe(401);
       },
     );
   });

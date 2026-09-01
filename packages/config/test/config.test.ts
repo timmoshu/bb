@@ -327,6 +327,23 @@ describe("consumer-specific config", () => {
     ).toBe("launch-123");
   });
 
+  it("carries the Work Together integration token only when it is set", () => {
+    expect(
+      loadServerConfig({
+        env: createServerRuntimeEnv({
+          BB_WORK_TOGETHER_INTEGRATION_TOKEN: undefined,
+        }),
+      }),
+    ).not.toHaveProperty("BB_WORK_TOGETHER_INTEGRATION_TOKEN");
+    expect(
+      loadServerConfig({
+        env: createServerRuntimeEnv({
+          BB_WORK_TOGETHER_INTEGRATION_TOKEN: "wt-integration-token-32chars-ok!",
+        }),
+      }).BB_WORK_TOGETHER_INTEGRATION_TOKEN,
+    ).toBe("wt-integration-token-32chars-ok!");
+  });
+
   it("defaults the server bind host to loopback", () => {
     const serverConfig = loadServerConfig({
       env: createServerRuntimeEnv({
