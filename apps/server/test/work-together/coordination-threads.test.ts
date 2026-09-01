@@ -153,11 +153,18 @@ describe("work-together coordination thread route", () => {
         expect(created.status).toBe(201);
         const createdBody = (await created.json()) as {
           created: boolean;
-          thread: { id: string; status: string; projectId: string; environmentId: string | null };
+          thread: {
+            id: string;
+            status: string;
+            projectId: string;
+            environmentId: string | null;
+            providerId: string;
+          };
         };
         expect(createdBody.created).toBe(true);
         expect(createdBody.thread.projectId).toBe(project.id);
         expect(createdBody.thread.environmentId).toBe(environment.id);
+        expect(createdBody.thread.providerId).toBe("acp-grok");
         const threadId = createdBody.thread.id;
         expect(threadId.startsWith("thr_")).toBe(true);
 
@@ -185,6 +192,7 @@ describe("work-together coordination thread route", () => {
         };
         expect(retryBody.created).toBe(false);
         expect(retryBody.thread.id).toBe(threadId);
+        expect(getThread(harness.db, threadId)?.providerId).toBe("acp-grok");
         expect(listThreads(harness.db, { projectId: project.id })).toHaveLength(1);
         expect(getThread(harness.db, threadId)?.updatedAt).toBe(idle.updatedAt);
 
