@@ -205,8 +205,9 @@ describe("work-together coordination thread route", () => {
             model: "gpt-5",
           }),
         });
-        expect(sent.status, await sent.text()).toBe(200);
-        expect(listQueuedThreadCommands(harness, "thread.start", threadId).length).toBeGreaterThan(
+        expect(sent.status).toBe(409);
+        expect(((await sent.json()) as { code?: string }).code).toBe("context_not_applied");
+        expect(listQueuedThreadCommands(harness, "thread.start", threadId)).toHaveLength(
           0,
         );
 
