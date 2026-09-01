@@ -33,6 +33,7 @@ import { discoverPluginSkillIds } from "../skills/injected-skills.js";
 import { resolveWorkspaceProjectSkills } from "../skills/workspace-skills.js";
 import { resolveSharedSkills } from "../skills/shared-skills.js";
 import { UPDATE_ENVIRONMENT_DIRECTORY_TOOL } from "./thread-environment-directory.js";
+import { workTogetherFilespaceToolForThread } from "../work-together-filespace-tool.js";
 import {
   DATA_DIR_AGENT_INSTRUCTIONS_RELATIVE_PATH,
   WORKSPACE_AGENT_INSTRUCTIONS_RELATIVE_PATH,
@@ -236,6 +237,18 @@ export async function resolveThreadRuntimeCommandConfig(
   const dynamicToolContributions = resolveDynamicTools(
     conditionalConfiguration.tools,
   );
+  const wtFilespaceTool = workTogetherFilespaceToolForThread(
+    deps.db,
+    args.thread.id,
+  );
+  if (wtFilespaceTool) {
+    dynamicToolContributions.push({
+      tool: wtFilespaceTool,
+      instructions:
+        "When you need to publish a file into the Goal filespace, call `wt_filespace_publish`. Do not invent HTTP, tokens, actor, or goal ids.",
+      pluginId: null,
+    });
+  }
   const dynamicTools = dynamicToolContributions.map(
     (contribution) => contribution.tool,
   );

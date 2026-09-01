@@ -77,6 +77,7 @@ export type TestAppHarnessConfigOverrides = Partial<ServerRuntimeConfig> & {
     pluginId: string;
   }[];
   workTogetherIntegrationToken?: string;
+  wtCellTools?: { baseUrl: string; token: string; fetch?: typeof fetch };
 };
 
 export const testLogger = {
@@ -141,6 +142,7 @@ export async function createTestAppHarness(
     seedFirstPartyProviders = true,
     extraProviders,
     workTogetherIntegrationToken,
+    wtCellTools,
     ...configOverrides
   } = overrides;
   const dataDir = await mkdtemp(join(tmpdir(), "bb-server-test-"));
@@ -272,12 +274,12 @@ export async function createTestAppHarness(
     sharedPorts,
     workspaceReadCaches,
   };
-  const { app, pluginCatalogService, pluginService } = createApp(
-    deps,
-    workTogetherIntegrationToken === undefined
-      ? undefined
-      : { workTogetherIntegrationToken },
-  );
+  const { app, pluginCatalogService, pluginService } = createApp(deps, {
+    ...(workTogetherIntegrationToken === undefined
+      ? {}
+      : { workTogetherIntegrationToken }),
+    ...(wtCellTools === undefined ? {} : { wtCellTools }),
+  });
 
   return {
     app,
