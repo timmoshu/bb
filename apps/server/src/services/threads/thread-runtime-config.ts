@@ -34,6 +34,7 @@ import { resolveWorkspaceProjectSkills } from "../skills/workspace-skills.js";
 import { resolveSharedSkills } from "../skills/shared-skills.js";
 import { UPDATE_ENVIRONMENT_DIRECTORY_TOOL } from "./thread-environment-directory.js";
 import { workTogetherFilespaceToolForThread } from "../work-together-filespace-tool.js";
+import { workTogetherSettlementToolsForThread, WT_CHECKPOINT_REPORT_TOOL_NAME } from "../work-together-settlement-tools.js";
 import {
   DATA_DIR_AGENT_INSTRUCTIONS_RELATIVE_PATH,
   WORKSPACE_AGENT_INSTRUCTIONS_RELATIVE_PATH,
@@ -246,6 +247,19 @@ export async function resolveThreadRuntimeCommandConfig(
       tool: wtFilespaceTool,
       instructions:
         "When you need to publish a file into the Goal filespace, call `wt_filespace_publish`. Do not invent HTTP, tokens, actor, or goal ids.",
+      pluginId: null,
+    });
+  }
+  for (const tool of workTogetherSettlementToolsForThread(
+    deps.db,
+    args.thread.id,
+  )) {
+    dynamicToolContributions.push({
+      tool,
+      instructions:
+        tool.name === WT_CHECKPOINT_REPORT_TOOL_NAME
+          ? "After material progress, call `wt_checkpoint_report`. A later attempt can read the last checkpoint. This does not finish Work. Do not invent HTTP, tokens, actor, or goal ids."
+          : "When you have a Primary synthesis, call `wt_result_report`. This is the result for a human; it does not finish Work or mark a Goal met. Do not invent HTTP, tokens, actor, or goal ids.",
       pluginId: null,
     });
   }

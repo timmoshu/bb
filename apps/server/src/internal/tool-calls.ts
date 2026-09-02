@@ -20,6 +20,12 @@ import {
   handleWtFilespacePublishToolCall,
   WT_FILESPACE_PUBLISH_TOOL_NAME,
 } from "../services/work-together-filespace-tool.js";
+import {
+  handleWtCheckpointReportToolCall,
+  handleWtResultReportToolCall,
+  WT_CHECKPOINT_REPORT_TOOL_NAME,
+  WT_RESULT_REPORT_TOOL_NAME,
+} from "../services/work-together-settlement-tools.js";
 import { requireAuthenticatedDaemonSession } from "./session-state.js";
 
 const textEncoder = new TextEncoder();
@@ -85,6 +91,24 @@ export function registerInternalToolCallRoutes(app: Hono, deps: AppDeps): void {
       if (payload.tool === WT_FILESPACE_PUBLISH_TOOL_NAME) {
         return context.json(
           await handleWtFilespacePublishToolCall({
+            threadId: thread.id,
+            input: payload.arguments,
+          }),
+        );
+      }
+
+      if (payload.tool === WT_CHECKPOINT_REPORT_TOOL_NAME) {
+        return context.json(
+          await handleWtCheckpointReportToolCall({
+            threadId: thread.id,
+            input: payload.arguments,
+          }),
+        );
+      }
+
+      if (payload.tool === WT_RESULT_REPORT_TOOL_NAME) {
+        return context.json(
+          await handleWtResultReportToolCall({
             threadId: thread.id,
             input: payload.arguments,
           }),
