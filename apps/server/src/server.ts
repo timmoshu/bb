@@ -25,6 +25,7 @@ import {
   assertWorkTogetherIntegrationToken,
   registerWorkTogetherCoordinationRoutes,
 } from "./routes/work-together-coordination.js";
+import { setWorkTogetherCellTools } from "./services/work-together-filespace-tool.js";
 import {
   createPluginService,
   type PluginService,
@@ -129,6 +130,7 @@ interface CreateAppOptions {
   slowApiRequestLogThresholdMs?: number;
   staticDir?: string;
   workTogetherIntegrationToken?: string;
+  wtCellTools?: { baseUrl: string; token: string; fetch?: typeof fetch };
 }
 
 interface StaticResponseHeadersArgs {
@@ -415,6 +417,7 @@ export function createApp(
   if (options?.workTogetherIntegrationToken !== undefined) {
     assertWorkTogetherIntegrationToken(options.workTogetherIntegrationToken);
   }
+  setWorkTogetherCellTools(options?.wtCellTools);
   const app = new Hono();
   const { injectWebSocket, upgradeWebSocket, wss } = createNodeWebSocket({
     app,

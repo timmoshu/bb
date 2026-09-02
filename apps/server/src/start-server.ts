@@ -195,6 +195,14 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
             workTogetherIntegrationToken:
               serverConfig.BB_WORK_TOGETHER_INTEGRATION_TOKEN,
           }),
+      ...(() => {
+        const baseUrl = toOptionalString(process.env.BB_WT_CELL_TOOLS_BASE_URL);
+        const token = toOptionalString(process.env.BB_WT_CELL_TOOLS_TOKEN);
+        if (baseUrl === undefined || token === undefined || token.length < 32) {
+          return {};
+        }
+        return { wtCellTools: { baseUrl, token } };
+      })(),
     },
   );
   const eventLoopStallMonitor = startEventLoopStallMonitor({ logger });

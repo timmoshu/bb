@@ -16,6 +16,10 @@ import {
   handleUpdateEnvironmentDirectoryToolCall,
   UPDATE_ENVIRONMENT_DIRECTORY_TOOL_NAME,
 } from "../services/threads/thread-environment-directory.js";
+import {
+  handleWtFilespacePublishToolCall,
+  WT_FILESPACE_PUBLISH_TOOL_NAME,
+} from "../services/work-together-filespace-tool.js";
 import { requireAuthenticatedDaemonSession } from "./session-state.js";
 
 const textEncoder = new TextEncoder();
@@ -74,6 +78,15 @@ export function registerInternalToolCallRoutes(app: Hono, deps: AppDeps): void {
             input: payload.arguments,
             thread,
             turnId: payload.turnId,
+          }),
+        );
+      }
+
+      if (payload.tool === WT_FILESPACE_PUBLISH_TOOL_NAME) {
+        return context.json(
+          await handleWtFilespacePublishToolCall({
+            threadId: thread.id,
+            input: payload.arguments,
           }),
         );
       }
