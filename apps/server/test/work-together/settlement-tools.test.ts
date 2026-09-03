@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   handleWtCheckpointReportToolCall,
+  handleWtNeedsYouReportToolCall,
   handleWtResultReportToolCall,
   WT_CHECKPOINT_REPORT_TOOL,
   WT_CHECKPOINT_REPORT_TOOL_NAME,
+  WT_NEEDS_YOU_REPORT_TOOL,
+  WT_NEEDS_YOU_REPORT_TOOL_NAME,
   WT_RESULT_REPORT_TOOL,
   WT_RESULT_REPORT_TOOL_NAME,
   workTogetherSettlementToolsForThread,
@@ -32,8 +36,11 @@ describe("work-together settlement ACP tools", () => {
   it("lists checkpoint and result tools on coordination threads only without leaking token or identity", async () => {
     expect(WT_CHECKPOINT_REPORT_TOOL.name).toBe(WT_CHECKPOINT_REPORT_TOOL_NAME);
     expect(WT_RESULT_REPORT_TOOL.name).toBe(WT_RESULT_REPORT_TOOL_NAME);
+    expect(WT_NEEDS_YOU_REPORT_TOOL.name).toBe(WT_NEEDS_YOU_REPORT_TOOL_NAME);
     assertDescriptorClean(JSON.stringify(WT_CHECKPOINT_REPORT_TOOL));
     assertDescriptorClean(JSON.stringify(WT_RESULT_REPORT_TOOL));
+    assertDescriptorClean(JSON.stringify(WT_NEEDS_YOU_REPORT_TOOL));
+    expect(WT_NEEDS_YOU_REPORT_TOOL.description).toContain("does not finish Work");
 
     await withTestHarness(
       {
@@ -74,6 +81,7 @@ describe("work-together settlement ACP tools", () => {
         expect(names).toEqual([
           WT_CHECKPOINT_REPORT_TOOL_NAME,
           WT_RESULT_REPORT_TOOL_NAME,
+          WT_NEEDS_YOU_REPORT_TOOL_NAME,
         ]);
 
         const ordinary = seedThread(harness.deps, {
@@ -190,7 +198,41 @@ describe("work-together settlement ACP tools", () => {
           summary: "Primary synthesis. Does not finish Work.",
         });
         expect(JSON.stringify(posts[1]?.body)).not.toContain("actorId");
+
+        const forgedNeeds = await handleWtNeedsYouReportToolCall({
+          threadId,
+          input: { idempotencyKey: "ny-1", question: "Which API?", actorId: "forged" },
+        });
+        expect(forgedNeeds.success).toBe(false);
+        expect(posts).toHaveLength(2);
+
+        const needsYou = await handleWtNeedsYouReportToolCall({
+          threadId,
+          input: { idempotencyKey: "ny-1", question: "Which API should we freeze?" },
+        });
+        expect(needsYou.success).toBe(true);
+        expect(posts[2]?.url).toBe("http://127.0.0.1:9/cell-tools/v1/needs-you");
+        expect(posts[2]?.body).toEqual({
+          bbThreadId: threadId,
+          idempotencyKey: "ny-1",
+          question: "Which API should we freeze?",
+        });
+        expect(JSON.stringify(posts[2]?.body)).not.toContain("actorId");
+        expect(
+          new Headers(posts[2]?.headers as HeadersInit).get("authorization"),
+        ).toBe(`Bearer ${CELL_TOKEN}`);
       },
     );
+  });
+
+  it("runtime instructions name needs-you stop semantics and keep checkpoint/result", () => {
+    const runtime = readFileSync(
+      new URL("../../src/services/threads/thread-runtime-config.ts", import.meta.url),
+      "utf8",
+    );
+    expect(runtime).toContain("`wt_checkpoint_report`");
+    expect(runtime).toContain("`wt_result_report`");
+    expect(runtime).toContain("`wt_needs_you_report` once and stop");
+    expect(runtime).toContain("Do not keep looping checkpoint or result");
   });
 });

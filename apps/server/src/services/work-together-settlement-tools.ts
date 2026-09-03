@@ -6,6 +6,7 @@ import { getWorkTogetherCellTools } from "./work-together-filespace-tool.js";
 
 export const WT_CHECKPOINT_REPORT_TOOL_NAME = "wt_checkpoint_report";
 export const WT_RESULT_REPORT_TOOL_NAME = "wt_result_report";
+export const WT_NEEDS_YOU_REPORT_TOOL_NAME = "wt_needs_you_report";
 
 const checkpointInputSchema = z
   .object({
@@ -20,6 +21,13 @@ const checkpointInputSchema = z
 const resultInputSchema = checkpointInputSchema.extend({
   summary: z.string().min(1).max(4000),
 });
+
+const needsYouInputSchema = z
+  .object({
+    idempotencyKey: z.string().min(1).max(200),
+    question: z.string().min(1).max(4000),
+  })
+  .strict();
 
 export const WT_CHECKPOINT_REPORT_TOOL: DynamicTool = {
   name: WT_CHECKPOINT_REPORT_TOOL_NAME,
@@ -93,13 +101,34 @@ export const WT_RESULT_REPORT_TOOL: DynamicTool = {
   },
 };
 
+export const WT_NEEDS_YOU_REPORT_TOOL: DynamicTool = {
+  name: WT_NEEDS_YOU_REPORT_TOOL_NAME,
+  description:
+    "Use only when progress cannot continue without a human decision or input. Call once and stop. This does not finish Work or mark a Goal met. Do not include actor, goal, workspace, or thread identifiers.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      idempotencyKey: {
+        type: "string",
+        description: "Caller-chosen idempotency key for this needs-you report.",
+      },
+      question: {
+        type: "string",
+        description: "The human decision or input required to continue.",
+      },
+    },
+    required: ["idempotencyKey", "question"],
+    additionalProperties: false,
+  },
+};
+
 export function workTogetherSettlementToolsForThread(
   db: DbQueryConnection,
   threadId: string,
 ): DynamicTool[] {
   if (!getWorkTogetherCellTools()) return [];
   if (!getWorkTogetherThreadContext(db, threadId)) return [];
-  return [WT_CHECKPOINT_REPORT_TOOL, WT_RESULT_REPORT_TOOL];
+  return [WT_CHECKPOINT_REPORT_TOOL, WT_RESULT_REPORT_TOOL, WT_NEEDS_YOU_REPORT_TOOL];
 }
 
 function textResponse(success: boolean, text: string): ToolCallResponse {
@@ -178,5 +207,21 @@ export async function handleWtResultReportToolCall(args: {
     args.threadId,
     parsed.data,
     "Result report failed",
+  );
+}
+
+export async function handleWtNeedsYouReportToolCall(args: {
+  threadId: string;
+  input: unknown;
+}): Promise<ToolCallResponse> {
+  const parsed = needsYouInputSchema.safeParse(args.input);
+  if (!parsed.success) {
+    return textResponse(false, "Invalid needs-you report input");
+  }
+  return postSettlement(
+    "/cell-tools/v1/needs-you",
+    args.threadId,
+    parsed.data,
+    "Needs-you report failed",
   );
 }
