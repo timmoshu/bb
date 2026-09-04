@@ -1,10 +1,13 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   createServer,
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
+import { createServer as createNetServer, type Socket } from "node:net";
+import { fileURLToPath } from "node:url";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -15,6 +18,7 @@ import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAcpAgentConnection } from "./bridge/agent-connection.js";
+import { resolveAcpMcpHelperRuntime } from "./mcp-helper-runtime.js";
 import { planAcpAgentLaunch } from "./sandbox-launch.js";
 
 const scratch: string[] = [];
@@ -64,6 +68,41 @@ function runPlan(
     stdout: result.stdout,
     stderr: result.stderr,
   };
+}
+
+function runPlanAsync(
+  plan: ReturnType<typeof planAcpAgentLaunch>,
+  timeoutMs = 25_000,
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(plan.command, plan.args, {
+      cwd: plan.cwd,
+      env: plan.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(`runPlanAsync timed out: ${stderr}`));
+    }, timeoutMs);
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on("close", (status) => {
+      clearTimeout(timer);
+      resolve({ status, stdout, stderr });
+    });
+  });
 }
 
 async function listen401(): Promise<{ url: string; close(): Promise<void> }> {
@@ -352,5 +391,171 @@ fs.writeFileSync("live-out.json", JSON.stringify(report));
     expect(report.ssh).toBe(false);
     expect(report.gh).toBe(false);
     expect(report.grokUnbound).toBe(false);
+  });
+
+  it("launches the MCP helper inside none bwrap and calls a dynamic tool over 127.0.0.1", async () => {
+    const token = "s2b-token";
+    const tcpLines: unknown[] = [];
+    const toolServer = createNetServer((socket: Socket) => {
+      let buffer = "";
+      socket.setEncoding("utf8");
+      socket.on("data", (chunk) => {
+        buffer += chunk;
+        const newline = buffer.indexOf("\n");
+        if (newline === -1) return;
+        let parsed: { kind?: string; token?: string; tool?: string };
+        try {
+          parsed = JSON.parse(buffer.slice(0, newline)) as typeof parsed;
+        } catch (error) {
+          tcpLines.push({ parseError: String(error), raw: buffer });
+          socket.end(`${JSON.stringify({ ok: false, error: "parse" })}\n`);
+          return;
+        }
+        tcpLines.push(parsed);
+        if (parsed.token !== token) {
+          socket.end(`${JSON.stringify({ ok: false, error: "bad token" })}\n`);
+          return;
+        }
+        if (parsed.kind === "initialized") {
+          socket.end(`${JSON.stringify({ ok: true, content: "", images: [] })}\n`);
+          return;
+        }
+        if (parsed.kind === "toolCall" && parsed.tool === "checkpoint") {
+          socket.end(
+            `${JSON.stringify({
+              ok: true,
+              content: "pong",
+              contentBlocks: [{ type: "text", text: "pong" }],
+              images: [],
+            })}\n`,
+          );
+          return;
+        }
+        socket.end(`${JSON.stringify({ ok: false, error: "unexpected" })}\n`);
+      });
+    });
+    await new Promise<void>((resolve) => toolServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = toolServer.address();
+      if (!address || typeof address === "string") {
+        throw new Error("tool bridge did not bind");
+      }
+      const helper = resolveAcpMcpHelperRuntime({
+        execPath: process.execPath,
+        execArgv: ["--conditions=source", "--import", "tsx"],
+        bridgeModulePath: fileURLToPath(new URL("./bridge/bridge.ts", import.meta.url)),
+      });
+      const root = scratchDir("wt-bwrap-mcp-");
+      const hostHome = join(root, "home");
+      const cwd = join(hostHome, "room");
+      mkdirSync(join(hostHome, ".ssh"), { recursive: true });
+      mkdirSync(cwd, { recursive: true });
+      writeFileSync(join(hostHome, ".ssh", "id_test"), "HOST_SECRET_MARKER\n");
+      writeFileSync(
+        join(cwd, "helper.json"),
+        JSON.stringify({
+          command: helper.command,
+          args: helper.args,
+          env: {
+            BB_ACP_DYNAMIC_TOOL_HOST: "127.0.0.1",
+            BB_ACP_DYNAMIC_TOOL_PORT: String(address.port),
+            BB_ACP_DYNAMIC_TOOL_TOKEN: token,
+            BB_ACP_DYNAMIC_TOOL_THREAD_ID: "thread-s2b",
+            BB_ACP_DYNAMIC_TOOLS: JSON.stringify([
+              {
+                name: "checkpoint",
+                description: "Record a checkpoint.",
+                inputSchema: { type: "object", properties: {} },
+              },
+            ]),
+          },
+        }),
+      );
+      writeFileSync(
+        join(cwd, "launch-mcp.cjs"),
+        `
+const { spawn } = require("node:child_process");
+const fs = require("node:fs");
+const helper = JSON.parse(fs.readFileSync("helper.json", "utf8"));
+const env = { ...process.env, ...helper.env };
+const child = spawn(helper.command, helper.args, { env, stdio: ["pipe", "pipe", "pipe"] });
+let stdout = "";
+let stderr = "";
+child.stdout.setEncoding("utf8");
+child.stderr.setEncoding("utf8");
+child.stdout.on("data", (chunk) => { stdout += chunk; });
+child.stderr.on("data", (chunk) => { stderr += chunk; });
+const send = (msg) => child.stdin.write(JSON.stringify(msg) + "\\n");
+send({
+  jsonrpc: "2.0",
+  id: 1,
+  method: "initialize",
+  params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "s2b", version: "0" } },
+});
+const deadline = Date.now() + 20000;
+const waitFor = (needle) => new Promise((resolve, reject) => {
+  const timer = setInterval(() => {
+    if (stdout.includes(needle)) {
+      clearInterval(timer);
+      resolve(undefined);
+    } else if (Date.now() > deadline) {
+      clearInterval(timer);
+      reject(new Error("timeout waiting for " + needle + " stderr=" + stderr + " stdout=" + stdout));
+    }
+  }, 50);
+});
+waitFor('"serverInfo"').then(() => new Promise((resolve) => setTimeout(resolve, 250))).then(() => {
+  send({
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: { name: "checkpoint", arguments: {} },
+  });
+  return waitFor('"pong"');
+}).then(() => {
+  let ssh = "ENOENT";
+  try { ssh = fs.readFileSync(process.env.HOME + "/.ssh/id_test", "utf8"); } catch (error) {
+    ssh = error.code || "ENOENT";
+  }
+  fs.writeFileSync("mcp-out.json", JSON.stringify({ stdout, stderr, ssh }));
+  child.kill();
+  process.exit(0);
+}).catch((error) => {
+  fs.writeFileSync("mcp-out.json", JSON.stringify({ error: String(error), stdout, stderr }));
+  child.kill();
+  process.exit(1);
+});
+`,
+      );
+      const plan = planAcpAgentLaunch({
+        deliveryAuthority: "none",
+        command: process.execPath,
+        args: [join(cwd, "launch-mcp.cjs")],
+        cwd,
+        env: { PATH: process.env.PATH, HOME: hostHome },
+        bwrapPath: "/usr/bin/bwrap",
+        platform: "linux",
+        hostHome,
+        runtimeRoBinds: helper.roBinds,
+      });
+      expect(plan.roBinds.some((bind) => bind.endsWith("wt-delivery-authority"))).toBe(
+        true,
+      );
+      const ran = await runPlanAsync(plan);
+      const outPath = join(cwd, "mcp-out.json");
+      const dumped = existsSync(outPath) ? readFileSync(outPath, "utf8") : "missing mcp-out.json";
+      expect(ran.status, `${ran.stderr}\n${ran.stdout}\n${dumped}\ntcp=${JSON.stringify(tcpLines)}`).toBe(0);
+      const out = JSON.parse(readFileSync(join(cwd, "mcp-out.json"), "utf8")) as {
+        stdout: string;
+        ssh: string;
+      };
+      expect(out.stdout).toContain("pong");
+      expect(out.stdout).toContain("bb-bridge");
+      expect(out.ssh).not.toContain("HOST_SECRET_MARKER");
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        toolServer.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
   });
 });

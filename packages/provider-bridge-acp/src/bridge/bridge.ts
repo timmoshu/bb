@@ -133,6 +133,7 @@ import {
   runAcpDynamicToolMcpServer,
   type AcpMcpServerConfig,
 } from "./tool-proxy-mcp.js";
+import { resolveAcpMcpHelperRuntime } from "../mcp-helper-runtime.js";
 
 interface AcpSessionPolicy {
   permissionMode: "accept-edits" | "full";
@@ -295,6 +296,15 @@ function resolveBridgeProcessArgsForMcpServer(): string[] {
   return [...process.execArgv, fileURLToPath(import.meta.url), "--mcp-stdio"];
 }
 
+function noneMcpHelperRuntime() {
+  return resolveAcpMcpHelperRuntime({
+    execPath: process.execPath,
+    execArgv: process.execArgv,
+    bridgeModulePath: fileURLToPath(import.meta.url),
+    resolveSpecifier: (specifier) => import.meta.resolve(specifier),
+  });
+}
+
 function resolveBridgeProcessEnvForMcpServer(): AcpMcpServerConfig["env"] {
   const electronRunAsNode = process.env.ELECTRON_RUN_AS_NODE;
   if (electronRunAsNode === undefined) {
@@ -426,9 +436,16 @@ async function buildSessionMcpServers(
     return [];
   }
   const bridge = await ensureDynamicToolBridge();
+  const helper =
+    params.deliveryAuthority === "none"
+      ? noneMcpHelperRuntime()
+      : {
+          command: process.execPath,
+          args: resolveBridgeProcessArgsForMcpServer(),
+        };
   const config = buildAcpMcpServerConfig({
-    bridgeArgs: resolveBridgeProcessArgsForMcpServer(),
-    command: process.execPath,
+    bridgeArgs: helper.args,
+    command: helper.command,
     dynamicTools,
     host: bridge.host,
     port: bridge.port,
@@ -1664,12 +1681,15 @@ async function startAgentSession(
     ...withoutBridgeRuntimeEnv(process.env),
     ...params.envVars,
   };
+  const noneHelper =
+    params.deliveryAuthority === "none" ? noneMcpHelperRuntime() : null;
   const connection = createAcpAgentConnection({
     command: params.agent.command,
     args: launch.args,
     cwd: params.cwd,
     env: childEnv,
     deliveryAuthority: params.deliveryAuthority,
+    ...(noneHelper !== null ? { runtimeRoBinds: noneHelper.roBinds } : {}),
     recordThreadId: bbThreadId,
     onNotification: (method, notificationParams) =>
       handleAgentNotification(session, method, notificationParams),

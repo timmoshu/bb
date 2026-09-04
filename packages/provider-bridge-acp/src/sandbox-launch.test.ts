@@ -66,6 +66,8 @@ describe("planAcpAgentLaunch", () => {
       cwd: "/tmp/workspace",
       env,
       bwrap: false,
+      rwBinds: [],
+      roBinds: [],
       binds: [],
     });
   });
@@ -174,6 +176,9 @@ describe("planAcpAgentLaunch", () => {
     expect(plan.args).toContain("/run");
     expect(plan.binds).toContain(cwd);
     expect(plan.binds).toContain(join(hostHome, ".grok"));
+    expect(plan.rwBinds).toContain(cwd);
+    expect(plan.rwBinds).toContain(join(hostHome, ".grok"));
+    expect(plan.roBinds).not.toContain(join(hostHome, ".grok"));
     expect(plan.binds).not.toContain(join(hostHome, ".ssh"));
     expect(plan.binds).not.toContain(join(hostHome, ".config"));
     expect(plan.env.SSH_AUTH_SOCK).toBeUndefined();
@@ -245,5 +250,50 @@ describe("planAcpAgentLaunch", () => {
         hostHome: cwd,
       }),
     ).toThrow(/embedded git credentials/);
+  });
+
+  it("ro-binds MCP runtime paths separately from cwd and fails if they are missing", () => {
+    const root = scratchDir("wt-sandbox-runtime-");
+    const hostHome = join(root, "home");
+    const cwd = join(hostHome, "room");
+    const runtime = join(root, "release");
+    mkdirSync(cwd, { recursive: true });
+    mkdirSync(runtime, { recursive: true });
+    writeFileSync(join(runtime, "bridge.js"), "export {}\n");
+    const plan = planAcpAgentLaunch({
+      deliveryAuthority: "none",
+      command: process.execPath,
+      args: ["-e", "0"],
+      cwd,
+      env: { PATH: process.env.PATH },
+      bwrapPath: "/usr/bin/bwrap",
+      platform: "linux",
+      hostHome,
+      runtimeRoBinds: [runtime],
+    });
+    expect(plan.roBinds).toContain(runtime);
+    expect(plan.rwBinds).toContain(cwd);
+    expect(plan.rwBinds).not.toContain(runtime);
+    expect(
+      plan.args.some(
+        (arg, index) =>
+          arg === "--ro-bind" &&
+          plan.args[index + 1] === runtime &&
+          plan.args[index + 2] === runtime,
+      ),
+    ).toBe(true);
+    expect(() =>
+      planAcpAgentLaunch({
+        deliveryAuthority: "none",
+        command: process.execPath,
+        args: ["-e", "0"],
+        cwd,
+        env: { PATH: process.env.PATH },
+        bwrapPath: "/usr/bin/bwrap",
+        platform: "linux",
+        hostHome,
+        runtimeRoBinds: [join(root, "missing-release")],
+      }),
+    ).toThrow(/MCP runtime path is missing/);
   });
 });

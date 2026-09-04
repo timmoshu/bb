@@ -25,6 +25,7 @@ interface CreateAcpAgentConnectionOptions {
   cwd: string;
   env: Record<string, string | undefined>;
   deliveryAuthority: DeliveryAuthority;
+  runtimeRoBinds?: readonly string[];
   recordThreadId: string | null;
   onNotification(method: string, params: unknown): void;
   onRequest(
@@ -147,6 +148,9 @@ export function createAcpAgentConnection(
     args: options.args,
     cwd: options.cwd,
     env: options.env,
+    ...(options.runtimeRoBinds !== undefined
+      ? { runtimeRoBinds: options.runtimeRoBinds }
+      : {}),
   });
   const child: ChildProcess = spawn(launch.command, launch.args, {
     cwd: launch.cwd,

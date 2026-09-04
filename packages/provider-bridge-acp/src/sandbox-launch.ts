@@ -80,6 +80,8 @@ export interface AcpAgentLaunchPlan {
   cwd: string;
   env: Record<string, string | undefined>;
   bwrap: boolean;
+  rwBinds: string[];
+  roBinds: string[];
   binds: string[];
 }
 
@@ -92,6 +94,7 @@ export interface PlanAcpAgentLaunchInput {
   hostHome?: string;
   bwrapPath?: string;
   platform?: NodeJS.Platform;
+  runtimeRoBinds?: readonly string[];
 }
 
 function definedEnv(
@@ -270,6 +273,8 @@ export function planAcpAgentLaunch(
       cwd,
       env: { ...input.env },
       bwrap: false,
+      rwBinds: [],
+      roBinds: [],
       binds: [],
     };
   }
@@ -294,19 +299,37 @@ export function planAcpAgentLaunch(
   const env = sanitizeNoneEnv(input.env, hostHome);
   const executable = resolveAgentExecutable(input.command, env);
   const grokHome = join(hostHome, ".grok");
-  const binds = new Set<string>([cwd, ...gitBindPaths(cwd)]);
-  if (pathInside(hostHome, executable) || pathInside("/tmp", executable)) {
-    binds.add(executable);
-  }
+  const rwBinds = new Set<string>([cwd, ...gitBindPaths(cwd)]);
   if (existsSync(grokHome) && pathInside(grokHome, executable)) {
-    binds.add(grokHome);
+    rwBinds.add(grokHome);
+  }
+  const roBinds = new Set<string>();
+  if (pathInside(hostHome, executable) || pathInside("/tmp", executable)) {
+    roBinds.add(executable);
+  }
+  for (const path of input.runtimeRoBinds ?? []) {
+    const resolved = resolve(path);
+    if (!existsSync(resolved)) {
+      throw new AcpSandboxLaunchError(
+        `ACP sandbox MCP runtime path is missing: ${resolved}`,
+      );
+    }
+    if (resolved === hostHome || resolved === "/" || resolved === "/home") {
+      throw new AcpSandboxLaunchError(
+        `ACP sandbox refused a too-broad MCP runtime bind: ${resolved}`,
+      );
+    }
+    roBinds.add(realpathSync(resolved));
+  }
+  for (const path of rwBinds) {
+    roBinds.delete(path);
   }
 
   const maskedRoots = [...new Set([hostHome, "/tmp", "/run"])].map((root) =>
     resolve(root),
   );
   const dirs = new Set<string>();
-  for (const bind of binds) {
+  for (const bind of [...rwBinds, ...roBinds]) {
     for (const dir of ancestorDirectories(bind, maskedRoots)) {
       dirs.add(dir);
     }
@@ -332,17 +355,24 @@ export function planAcpAgentLaunch(
   for (const dir of [...dirs].sort((left, right) => left.length - right.length)) {
     bwrapArgs.push("--dir", dir);
   }
-  for (const bind of [...binds].sort()) {
+  for (const bind of [...roBinds].sort()) {
+    bwrapArgs.push("--ro-bind", bind, bind);
+  }
+  for (const bind of [...rwBinds].sort()) {
     bwrapArgs.push("--bind", bind, bind);
   }
   bwrapArgs.push("--chdir", cwd, "--", executable, ...input.args);
 
+  const rwBindList = [...rwBinds].sort();
+  const roBindList = [...roBinds].sort();
   return {
     command: bwrapPath,
     args: bwrapArgs,
     cwd,
     env,
     bwrap: true,
-    binds: [...binds].sort(),
+    rwBinds: rwBindList,
+    roBinds: roBindList,
+    binds: [...new Set([...rwBindList, ...roBindList])].sort(),
   };
 }
