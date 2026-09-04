@@ -202,6 +202,7 @@ describe("codex process topology", () => {
         DOCKER_HOST: "unix:///tmp/must-not-pass.sock",
         DATABASE_URL: "must-not-pass",
         CI_JOB_TOKEN: "must-not-pass",
+        HTTPS_PROXY: "http://user:password@proxy.invalid",
       },
       fakeScript: {
         processLogPath: join(workCwd, "process.log"),
@@ -215,6 +216,7 @@ describe("codex process topology", () => {
             "DOCKER_HOST",
             "DATABASE_URL",
             "CI_JOB_TOKEN",
+            "HTTPS_PROXY",
           ],
         },
         turns: [
@@ -295,6 +297,7 @@ describe("codex process topology", () => {
         DOCKER_HOST: null,
         DATABASE_URL: null,
         CI_JOB_TOKEN: null,
+        HTTPS_PROXY: null,
       },
     });
     expect(readFileSync(join(workCwd, "sandbox-local.txt"), "utf8")).toBe(

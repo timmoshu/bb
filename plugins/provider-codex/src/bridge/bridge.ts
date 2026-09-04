@@ -48,6 +48,7 @@ import {
 } from "@get-bb/plugin-sdk/provider-bridge";
 import { z } from "zod";
 import { closeSync, constants, openSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   CODEX_MACOS_PERMISSION_EXTENSION_KIND,
   summarizeCodexMacOsPermissions,
@@ -268,6 +269,9 @@ function sendRuntimeRequest(
 
 const CODEX_APP_SERVER_COMMAND_ENV = "BB_CODEX_BRIDGE_APP_SERVER_COMMAND";
 const CODEX_APP_SERVER_ARGS_ENV = "BB_CODEX_BRIDGE_APP_SERVER_ARGS";
+const PACKAGED_FAKE_APP_SERVER = fileURLToPath(
+  new URL("./fake-codex-app-server.mjs", import.meta.url),
+);
 
 const CODEX_INITIALIZE_PARAMS = {
   clientInfo: { name: "bb", version: "1.0.0", title: null },
@@ -803,6 +807,11 @@ function spawnChildConnection(
       workTogetherWorkCwdRoot: execution.options.workTogetherWorkCwdRoot,
       cwdBindSource: "/proc/self/fd/3",
       cwdValidationSource: `/proc/self/fd/${pinnedCwdFd}`,
+      allowProcessExecPath:
+        launch.command === process.execPath &&
+        launch.args.length > 0 &&
+        realpathSync(launch.args[0]!) ===
+          realpathSync(PACKAGED_FAKE_APP_SERVER),
     });
     return createCodexAppServerConnection({
       ...plan,

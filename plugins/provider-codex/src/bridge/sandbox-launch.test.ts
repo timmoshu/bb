@@ -62,6 +62,7 @@ describe("Codex app-server sandbox launch", () => {
     const base = {
       deliveryAuthority: "none" as const,
       command: process.execPath,
+      allowProcessExecPath: true,
       args: [],
       cwd: work,
       env: { PATH: process.env.PATH, CODEX_HOME: join(parent, "missing-auth") },
@@ -92,6 +93,7 @@ describe("Codex app-server sandbox launch", () => {
     const plan = planCodexAppServerLaunch({
       deliveryAuthority: "none",
       command: process.execPath,
+      allowProcessExecPath: true,
       args: [],
       cwd: work,
       env: {
@@ -155,6 +157,7 @@ describe("Codex app-server sandbox launch", () => {
     const input = {
       deliveryAuthority: "none" as const,
       command: process.execPath,
+      allowProcessExecPath: true,
       args: [],
       cwd: work,
       env: { PATH: process.env.PATH, CODEX_HOME: authHome(parent) },
@@ -193,6 +196,10 @@ describe("Codex app-server sandbox launch", () => {
     expect(() => planCodexAppServerLaunch(input)).toThrow(
       "external common Git metadata",
     );
+    rmSync(join(work, ".git", "commondir"));
+    mkdirSync(join(work, ".git", "hooks"));
+    writeFileSync(join(work, ".git", "hooks", "pre-commit"), "#!/bin/sh\n");
+    expect(() => planCodexAppServerLaunch(input)).toThrow("active Git hooks");
   });
 
   it("admits one validated standalone Codex release closure under masked home", () => {

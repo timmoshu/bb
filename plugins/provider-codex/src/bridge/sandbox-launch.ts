@@ -6,13 +6,15 @@ import {
   lstatSync,
   openSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   statSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { DeliveryAuthority } from "@bb/domain";
 import { resolveCodexHome } from "../codex-home.js";
+
+type CodexDeliveryAuthority = "git" | "none";
 
 export const CODEX_SANDBOX_BWRAP_PATH = "/usr/bin/bwrap";
 const SANDBOX_HOME = "/run/bb-codex-home";
@@ -29,14 +31,6 @@ const ALLOWED_ENV_KEYS = new Set([
   "TERM",
   "COLORTERM",
   "TZ",
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "NO_PROXY",
-  "ALL_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "no_proxy",
-  "all_proxy",
   "SSL_CERT_FILE",
   "SSL_CERT_DIR",
   "NODE_EXTRA_CA_CERTS",
@@ -44,7 +38,7 @@ const ALLOWED_ENV_KEYS = new Set([
 const EMBEDDED_CREDENTIAL_URL = /(?:https?|git):\/\/[^/\s:]+:[^/\s@]+@/i;
 const EMBEDDED_TOKEN_URL = /(?:https?|git):\/\/(?!git@)[^/\s@]+@/i;
 const DANGEROUS_GIT_CONFIG =
-  /^\s*\[(?:credential|http|url|include|includeIf)\b|^\s*(?:helper|extraHeader|insteadOf|sshCommand|askPass)\s*=/im;
+  /^\s*\[(?:credential|http|url|include|includeIf|protocol)\b|^\s*(?:helper|extraHeader|insteadOf|sshCommand|askPass|hooksPath|gitProxy|fsmonitor|receivepack|uploadpack)\s*=/im;
 
 export class CodexSandboxLaunchError extends Error {
   constructor(message: string) {
@@ -64,7 +58,7 @@ export interface CodexAppServerLaunchPlan {
 }
 
 export interface PlanCodexAppServerLaunchInput {
-  deliveryAuthority: DeliveryAuthority;
+  deliveryAuthority: CodexDeliveryAuthority;
   command: string;
   args: readonly string[];
   cwd: string;
@@ -76,6 +70,7 @@ export interface PlanCodexAppServerLaunchInput {
   platform?: NodeJS.Platform;
   cwdBindSource?: string;
   cwdValidationSource?: string;
+  allowProcessExecPath?: boolean;
 }
 
 function lstatIfPresent(target: string) {
@@ -142,8 +137,16 @@ function resolveExecutable(
 function codexExecutableClosure(
   executable: string,
   hostHome: string,
+  allowProcessExecPath: boolean,
 ): string | null {
-  if (executable === realpathSync(process.execPath)) return executable;
+  if (executable === realpathSync(process.execPath)) {
+    if (!allowProcessExecPath) {
+      throw new CodexSandboxLaunchError(
+        "Codex sandbox cannot admit executable closure",
+      );
+    }
+    return executable;
+  }
   if (!pathInside(hostHome, executable)) {
     throw new CodexSandboxLaunchError(
       "Codex sandbox cannot admit executable closure",
@@ -204,6 +207,21 @@ function assertSafeLocalGit(cwd: string): void {
     throw new CodexSandboxLaunchError(
       "Codex sandbox rejected external common Git metadata",
     );
+  }
+  const hooksPath = join(dotGit, "hooks");
+  const hooks = lstatIfPresent(hooksPath);
+  if (hooks !== undefined) {
+    if (!hooks.isDirectory() || hooks.isSymbolicLink()) {
+      throw new CodexSandboxLaunchError("Codex sandbox rejected Git hooks");
+    }
+    for (const name of readdirSync(hooksPath)) {
+      if (name.endsWith(".sample")) continue;
+      if (lstatIfPresent(join(hooksPath, name)) !== undefined) {
+        throw new CodexSandboxLaunchError(
+          "Codex sandbox rejected active Git hooks",
+        );
+      }
+    }
   }
   const configInfo = lstatIfPresent(configPath);
   if (configInfo === undefined) return;
@@ -327,7 +345,11 @@ export function planCodexAppServerLaunch(
   }
 
   const executable = resolveExecutable(input.command, input.env);
-  const executableClosure = codexExecutableClosure(executable, hostHome);
+  const executableClosure = codexExecutableClosure(
+    executable,
+    hostHome,
+    input.allowProcessExecPath === true,
+  );
   assertSafeLocalGit(input.cwdValidationSource ?? cwd);
   const authFd = openCodexAuth(hostHome, input.env);
   try {

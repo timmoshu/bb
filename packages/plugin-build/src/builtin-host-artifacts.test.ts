@@ -1,4 +1,4 @@
-import { cp, mkdtemp, rm, symlink } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
@@ -120,6 +120,11 @@ describe("builtin host artifacts", () => {
         join(repositoryRoot, "node_modules", ".unused-toolchain"),
       );
       const built = await buildPluginHost(root, "0.9.0-test", toolchain);
+      if (pluginDir === "provider-codex") {
+        expect(await readFile(built.jsPath, "utf8")).not.toContain(
+          "@bb/domain",
+        );
+      }
       const imported: unknown = await import(
         `${pathToFileURL(built.jsPath).href}?test=${Date.now()}`
       );
