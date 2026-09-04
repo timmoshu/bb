@@ -383,6 +383,7 @@ export type {
 } from "./deferred-thread-messages.js";
 export {
   applyWorkTogetherThreadContext,
+  copyWorkTogetherThreadContext,
   getWorkTogetherThreadContext,
   markWorkTogetherCoordinationThread,
 } from "./work-together-thread-contexts.js";

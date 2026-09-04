@@ -1365,6 +1365,53 @@ describe("migrate", () => {
     prepareMigratedConnectionTemplate();
   });
 
+  it("preserves admitted execution cwd when replaying context migrations", () => {
+    const db = createConnection(":memory:");
+    try {
+      migrate(db);
+      const host = upsertHost(db, noopNotifier, {
+        name: "work-together-context-replay-host",
+        type: "persistent",
+      });
+      const { project } = createProject(db, noopNotifier, {
+        name: "work-together-context-replay-project",
+        source: {
+          type: "local_path",
+          hostId: host.id,
+          path: "/tmp/work-together-context-replay",
+        },
+      });
+      const thread = createThread(db, noopNotifier, {
+        projectId: project.id,
+        providerId: "codex",
+      });
+      db.$client
+        .prepare(
+          "INSERT INTO work_together_thread_contexts (thread_id, request_id, digest, execution_cwd, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(thread.id, "request-1", "a".repeat(64), "/managed/work", 1, 1);
+      db.$client.exec(`
+        DELETE FROM __drizzle_migrations
+        WHERE created_at >= (
+          SELECT created_at FROM __drizzle_migrations
+          ORDER BY created_at DESC LIMIT 1 OFFSET 1
+        );
+      `);
+
+      migrate(db);
+
+      expect(
+        db.$client
+          .prepare(
+            "SELECT execution_cwd AS executionCwd FROM work_together_thread_contexts WHERE thread_id = ?",
+          )
+          .get(thread.id),
+      ).toEqual({ executionCwd: "/managed/work" });
+    } finally {
+      closeConnection(db);
+    }
+  });
+
   it("backfills the first checkout commit component for every artifact shape", () => {
     const db = createConnection(":memory:");
     const commit = "d".repeat(40);

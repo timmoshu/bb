@@ -2,10 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { Hono } from "hono";
 import { z } from "zod";
 import { getThread, markWorkTogetherCoordinationThread } from "@bb/db";
-import {
-  GENERATED_ID_ALPHABET,
-  GENERATED_ID_SUFFIX_LENGTH,
-} from "@bb/domain";
+import { GENERATED_ID_ALPHABET, GENERATED_ID_SUFFIX_LENGTH } from "@bb/domain";
 import { ApiError } from "../errors.js";
 import type { ServerAppDeps } from "../types.js";
 import { requireEnvironment } from "../services/lib/entity-lookup.js";
@@ -16,6 +13,7 @@ import {
   assertCoordinationAcpCwd,
   getWorkTogetherThreadContext,
 } from "../services/work-together-thread-context.js";
+import { resolveWorkTogetherExecutionCwd } from "../services/work-together-execution-cwd.js";
 
 const MIN_TOKEN_LENGTH = 32;
 const MAX_BINDING_KEY_LENGTH = 500;
@@ -43,7 +41,10 @@ export function assertWorkTogetherIntegrationToken(token: string): void {
   }
 }
 
-function authorizationMatches(expected: string, header: string | undefined): boolean {
+function authorizationMatches(
+  expected: string,
+  header: string | undefined,
+): boolean {
   if (header === undefined || !header.startsWith("Bearer ")) {
     return false;
   }
@@ -129,169 +130,232 @@ function sha256Hex(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function executionCwdFromEnvelope(bytes: Buffer): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    throw new ApiError(400, "invalid_request", "Invalid request");
+  }
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    !("execution" in parsed) ||
+    typeof parsed.execution !== "object" ||
+    parsed.execution === null ||
+    Array.isArray(parsed.execution) ||
+    !("cwd" in parsed.execution) ||
+    typeof parsed.execution.cwd !== "string" ||
+    parsed.execution.cwd.length < 1 ||
+    parsed.execution.cwd.length > 4096
+  ) {
+    throw new ApiError(400, "invalid_request", "Invalid request");
+  }
+  return parsed.execution.cwd;
+}
+
 export function registerWorkTogetherCoordinationRoutes(
   app: Hono,
   deps: ServerAppDeps,
   token: string,
 ): void {
-  app.put("/api/work-together/v1/coordination-threads/:bindingKey", async (context) => {
-    if (!authorizationMatches(token, context.req.header("authorization"))) {
-      throw new ApiError(401, "unauthorized", "Unauthorized");
-    }
-    const bindingKey = requireBindingKey(context.req.param("bindingKey"));
-    const json: unknown = await context.req.json();
-    const parsed = coordinationThreadBodySchema.safeParse(json);
-    if (!parsed.success) {
-      throw new ApiError(400, "invalid_request", "Invalid request");
-    }
-    const environment = requireEnvironment(deps.db, parsed.data.environmentId);
-    if (environment.projectId !== parsed.data.projectId) {
-      throw new ApiError(409, "coordination_binding_conflict", "Coordination binding conflict");
-    }
-    if (environment.path) {
-      assertCoordinationAcpCwd(environment.path, undefined);
-    }
-    const threadId = coordinationThreadIdForBindingKey(bindingKey);
-    const existing = getThread(deps.db, threadId);
-    if (existing) {
-      throwIfIncompatibleExistingThread({
-        environmentId: parsed.data.environmentId,
-        projectId: parsed.data.projectId,
-        thread: existing,
-      });
-      markWorkTogetherCoordinationThread(deps.db, existing.id);
-      return context.json(
-        {
-          created: false,
-          thread: toThreadResponseFromThread(deps, { thread: existing }),
-        },
-        200,
+  app.put(
+    "/api/work-together/v1/coordination-threads/:bindingKey",
+    async (context) => {
+      if (!authorizationMatches(token, context.req.header("authorization"))) {
+        throw new ApiError(401, "unauthorized", "Unauthorized");
+      }
+      const bindingKey = requireBindingKey(context.req.param("bindingKey"));
+      const json: unknown = await context.req.json();
+      const parsed = coordinationThreadBodySchema.safeParse(json);
+      if (!parsed.success) {
+        throw new ApiError(400, "invalid_request", "Invalid request");
+      }
+      const environment = requireEnvironment(
+        deps.db,
+        parsed.data.environmentId,
       );
-    }
-    let thread;
-    try {
-      thread = await createThreadFromRequest(
-        deps,
-        {
-          environment: {
-            type: "reuse",
-            environmentId: parsed.data.environmentId,
-          },
-          input: [],
-          model: "grok-4.6",
-          origin: "sdk",
-          projectId: parsed.data.projectId,
-          providerId: "acp-grok",
-          startedOnBehalfOf: null,
-          title: parsed.data.title,
-        },
-        { threadId },
-      );
-    } catch (error) {
-      const raced = getThread(deps.db, threadId);
-      if (
-        raced &&
-        existingThreadMatchesBinding({
+      if (environment.projectId !== parsed.data.projectId) {
+        throw new ApiError(
+          409,
+          "coordination_binding_conflict",
+          "Coordination binding conflict",
+        );
+      }
+      if (environment.path) {
+        assertCoordinationAcpCwd(environment.path, undefined);
+      }
+      const threadId = coordinationThreadIdForBindingKey(bindingKey);
+      const existing = getThread(deps.db, threadId);
+      if (existing) {
+        throwIfIncompatibleExistingThread({
           environmentId: parsed.data.environmentId,
           projectId: parsed.data.projectId,
-          thread: raced,
-        })
-      ) {
-        markWorkTogetherCoordinationThread(deps.db, raced.id);
+          thread: existing,
+        });
+        markWorkTogetherCoordinationThread(deps.db, existing.id);
         return context.json(
           {
             created: false,
-            thread: toThreadResponseFromThread(deps, { thread: raced }),
+            thread: toThreadResponseFromThread(deps, { thread: existing }),
           },
           200,
         );
       }
-      throw error;
-    }
-    markWorkTogetherCoordinationThread(deps.db, thread.id);
-    return context.json(
-      {
-        created: true,
-        thread: toThreadResponseFromThread(deps, { thread }),
-      },
-      201,
-    );
-  });
-
-  app.put("/api/work-together/v1/threads/:threadId/context", async (context) => {
-    if (!authorizationMatches(token, context.req.header("authorization"))) {
-      throw new ApiError(401, "unauthorized", "Unauthorized");
-    }
-    const json: unknown = await context.req.json();
-    const parsed = threadContextBodySchema.safeParse(json);
-    if (!parsed.success) {
-      throw new ApiError(400, "invalid_request", "Invalid request");
-    }
-    const threadId = context.req.param("threadId");
-    const thread = getThread(deps.db, threadId);
-    if (!thread) {
-      throw new ApiError(404, "thread_not_found", "Thread not found");
-    }
-    const decoded = decodeEnvelopeBytes(parsed.data.bytes);
-    const computed = sha256Hex(decoded);
-    if (computed !== parsed.data.digest) {
-      throw new ApiError(400, "invalid_request", "Invalid request");
-    }
-    const existing = getWorkTogetherThreadContext(deps.db, threadId);
-    if (existing?.digest !== null && existing?.digest !== undefined) {
-      if (
-        existing.requestId === parsed.data.requestId &&
-        existing.digest === parsed.data.digest
-      ) {
-        return context.json(
+      let thread;
+      try {
+        thread = await createThreadFromRequest(
+          deps,
           {
-            outcome: "already_accepted",
-            requestId: existing.requestId,
-            digest: existing.digest,
+            environment: {
+              type: "reuse",
+              environmentId: parsed.data.environmentId,
+            },
+            input: [],
+            model: "grok-4.6",
+            origin: "sdk",
+            projectId: parsed.data.projectId,
+            providerId: "acp-grok",
+            startedOnBehalfOf: null,
+            title: parsed.data.title,
           },
-          200,
+          { threadId },
+        );
+      } catch (error) {
+        const raced = getThread(deps.db, threadId);
+        if (
+          raced &&
+          existingThreadMatchesBinding({
+            environmentId: parsed.data.environmentId,
+            projectId: parsed.data.projectId,
+            thread: raced,
+          })
+        ) {
+          markWorkTogetherCoordinationThread(deps.db, raced.id);
+          return context.json(
+            {
+              created: false,
+              thread: toThreadResponseFromThread(deps, { thread: raced }),
+            },
+            200,
+          );
+        }
+        throw error;
+      }
+      markWorkTogetherCoordinationThread(deps.db, thread.id);
+      return context.json(
+        {
+          created: true,
+          thread: toThreadResponseFromThread(deps, { thread }),
+        },
+        201,
+      );
+    },
+  );
+
+  app.put(
+    "/api/work-together/v1/threads/:threadId/context",
+    async (context) => {
+      if (!authorizationMatches(token, context.req.header("authorization"))) {
+        throw new ApiError(401, "unauthorized", "Unauthorized");
+      }
+      const json: unknown = await context.req.json();
+      const parsed = threadContextBodySchema.safeParse(json);
+      if (!parsed.success) {
+        throw new ApiError(400, "invalid_request", "Invalid request");
+      }
+      const threadId = context.req.param("threadId");
+      const thread = getThread(deps.db, threadId);
+      if (!thread) {
+        throw new ApiError(404, "thread_not_found", "Thread not found");
+      }
+      const decoded = decodeEnvelopeBytes(parsed.data.bytes);
+      const computed = sha256Hex(decoded);
+      if (computed !== parsed.data.digest) {
+        throw new ApiError(400, "invalid_request", "Invalid request");
+      }
+      if (thread.environmentId === null) {
+        throw new ApiError(
+          409,
+          "coordination_cwd_unavailable",
+          "Coordination cwd unavailable",
         );
       }
-      throw new ApiError(409, "context_conflict", "Context conflict");
-    }
-    const applied = applyWorkTogetherThreadContext(deps.db, {
-      threadId,
-      requestId: parsed.data.requestId,
-      digest: parsed.data.digest,
-    });
-    return context.json(
-      {
-        outcome: "accepted",
-        requestId: applied.requestId,
-        digest: applied.digest,
-      },
-      200,
-    );
-  });
+      const environment = requireEnvironment(deps.db, thread.environmentId);
+      if (!environment.path) {
+        throw new ApiError(
+          409,
+          "coordination_cwd_unavailable",
+          "Coordination cwd unavailable",
+        );
+      }
+      const executionCwd = resolveWorkTogetherExecutionCwd({
+        candidate: executionCwdFromEnvelope(decoded),
+        environmentPath: environment.path,
+        managedRoot: deps.config.workTogetherWorkCwdRoot,
+      });
+      const existing = getWorkTogetherThreadContext(deps.db, threadId);
+      if (existing?.digest !== null && existing?.digest !== undefined) {
+        if (
+          existing.requestId === parsed.data.requestId &&
+          existing.digest === parsed.data.digest &&
+          existing.executionCwd === executionCwd
+        ) {
+          return context.json(
+            {
+              outcome: "already_accepted",
+              requestId: existing.requestId,
+              digest: existing.digest,
+            },
+            200,
+          );
+        }
+        throw new ApiError(409, "context_conflict", "Context conflict");
+      }
+      const applied = applyWorkTogetherThreadContext(deps.db, {
+        threadId,
+        requestId: parsed.data.requestId,
+        digest: parsed.data.digest,
+        executionCwd,
+      });
+      return context.json(
+        {
+          outcome: "accepted",
+          requestId: applied.requestId,
+          digest: applied.digest,
+        },
+        200,
+      );
+    },
+  );
 
-  app.get("/api/work-together/v1/threads/:threadId/context", async (context) => {
-    if (!authorizationMatches(token, context.req.header("authorization"))) {
-      throw new ApiError(401, "unauthorized", "Unauthorized");
-    }
-    const threadId = context.req.param("threadId");
-    const thread = getThread(deps.db, threadId);
-    if (!thread) {
-      throw new ApiError(404, "thread_not_found", "Thread not found");
-    }
-    const existing = getWorkTogetherThreadContext(deps.db, threadId);
-    if (
-      existing === undefined ||
-      existing.requestId === null ||
-      existing.digest === null
-    ) {
-      throw new ApiError(404, "context_not_applied", "Context not applied");
-    }
-    return context.json(
-      {
-        requestId: existing.requestId,
-        digest: existing.digest,
-      },
-      200,
-    );
-  });
+  app.get(
+    "/api/work-together/v1/threads/:threadId/context",
+    async (context) => {
+      if (!authorizationMatches(token, context.req.header("authorization"))) {
+        throw new ApiError(401, "unauthorized", "Unauthorized");
+      }
+      const threadId = context.req.param("threadId");
+      const thread = getThread(deps.db, threadId);
+      if (!thread) {
+        throw new ApiError(404, "thread_not_found", "Thread not found");
+      }
+      const existing = getWorkTogetherThreadContext(deps.db, threadId);
+      if (
+        existing === undefined ||
+        existing.requestId === null ||
+        existing.digest === null
+      ) {
+        throw new ApiError(404, "context_not_applied", "Context not applied");
+      }
+      return context.json(
+        {
+          requestId: existing.requestId,
+          digest: existing.digest,
+        },
+        200,
+      );
+    },
+  );
 }

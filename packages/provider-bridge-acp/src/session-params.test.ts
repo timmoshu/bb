@@ -183,9 +183,14 @@ describe("buildAcpSessionParams", () => {
   it("copies deliveryAuthority onto ACP spawn params without changing cwd", () => {
     expect(
       buildAcpSessionParams({
-        additionalWorkspaceWriteRoots: [],
+        additionalWorkspaceWriteRoots: ["/environment-git-dir"],
         cwd: "/workspace",
-        options: { ...BASE_OPTIONS, deliveryAuthority: "none" },
+        options: {
+          ...BASE_OPTIONS,
+          deliveryAuthority: "none",
+          executionCwd: "/workspace",
+          executionEnvironmentCwd: "/environment",
+        },
         parameterizedModelPicker: false,
         launchSpec: launchSpecFor({
           displayName: "Custom ACP",
@@ -195,8 +200,47 @@ describe("buildAcpSessionParams", () => {
         }),
         providerLabel: "acp-custom",
         threadId: "thread-1",
-      }).deliveryAuthority,
-    ).toBe("none");
+      }),
+    ).toMatchObject({
+      cwd: "/workspace",
+      deliveryAuthority: "none",
+      workspaceWriteRoots: ["/workspace"],
+    });
+  });
+
+  it("rejects missing or overridden Work Together execution cwd", () => {
+    const base = {
+      additionalWorkspaceWriteRoots: [],
+      cwd: "/workspace",
+      parameterizedModelPicker: false,
+      providerLabel: "acp-custom",
+      threadId: "thread-1",
+    } as const;
+    const launchSpec = launchSpecFor({
+      displayName: "Custom ACP",
+      command: "custom-agent",
+      args: ["serve"],
+      env: {},
+    });
+    expect(() =>
+      buildAcpSessionParams({
+        ...base,
+        options: { ...BASE_OPTIONS, deliveryAuthority: "none" },
+        launchSpec,
+      }),
+    ).toThrow("Work Together execution cwd is invalid");
+    expect(() =>
+      buildAcpSessionParams({
+        ...base,
+        options: {
+          ...BASE_OPTIONS,
+          deliveryAuthority: "none",
+          executionCwd: "/workspace",
+          executionEnvironmentCwd: "/environment",
+        },
+        launchSpec: launchSpecFor({ ...launchSpec, cwd: "/override" }),
+      }),
+    ).toThrow("Work Together execution cwd is invalid");
   });
 
   it("pins the requested model over the protocol when the spec has no model CLI", () => {

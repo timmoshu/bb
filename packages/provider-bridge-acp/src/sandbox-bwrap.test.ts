@@ -54,9 +54,11 @@ function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}): string {
   return result.stdout;
 }
 
-function runPlan(
-  plan: ReturnType<typeof planAcpAgentLaunch>,
-): { status: number | null; stdout: string; stderr: string } {
+function runPlan(plan: ReturnType<typeof planAcpAgentLaunch>): {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+} {
   const result = spawnSync(plan.command, plan.args, {
     cwd: plan.cwd,
     env: plan.env,
@@ -160,7 +162,9 @@ fs.writeFileSync("probe-out.json", JSON.stringify(report));
 
 describe("ACP none bwrap enforcement", { timeout: 30_000 }, () => {
   it("is available on this host", () => {
-    const version = spawnSync("/usr/bin/bwrap", ["--version"], { encoding: "utf8" });
+    const version = spawnSync("/usr/bin/bwrap", ["--version"], {
+      encoding: "utf8",
+    });
     expect(version.status).toBe(0);
     expect(version.stdout).toMatch(/bubblewrap/);
   });
@@ -189,6 +193,7 @@ describe("ACP none bwrap enforcement", { timeout: 30_000 }, () => {
       command: process.execPath,
       args: [join(cwd, "probe.cjs"), sibling],
       cwd,
+      executionEnvironmentCwd: cwd,
       env: {
         PATH: process.env.PATH,
         HOME: hostHome,
@@ -205,7 +210,9 @@ describe("ACP none bwrap enforcement", { timeout: 30_000 }, () => {
     });
     const ran = runPlan(plan);
     expect(ran.status, ran.stderr).toBe(0);
-    const report = JSON.parse(readFileSync(join(cwd, "probe-out.json"), "utf8")) as {
+    const report = JSON.parse(
+      readFileSync(join(cwd, "probe-out.json"), "utf8"),
+    ) as {
       sshAuthSock: string | null;
       ghToken: string | null;
       githubToken: string | null;
@@ -222,7 +229,9 @@ describe("ACP none bwrap enforcement", { timeout: 30_000 }, () => {
       gitStatus: string;
     };
     expect(report.wrote).toBe("from-sandbox\n");
-    expect(readFileSync(join(cwd, "inside.txt"), "utf8")).toBe("from-sandbox\n");
+    expect(readFileSync(join(cwd, "inside.txt"), "utf8")).toBe(
+      "from-sandbox\n",
+    );
     expect(report.xai).toBe("xai-sandbox");
     expect(report.author).toBe("WT Room Agent");
     expect(report.sshAuthSock).toBeNull();
@@ -238,9 +247,7 @@ describe("ACP none bwrap enforcement", { timeout: 30_000 }, () => {
     expect(report.gitStatus).toContain("inside.txt");
   });
 
-  it(
-    "commits locally and fails authenticated git push variants",
-    async () => {
+  it("commits locally and fails authenticated git push variants", async () => {
     const remote = await listen401();
     try {
       const root = scratchDir("wt-bwrap-push-");
@@ -279,6 +286,7 @@ fs.writeFileSync("push-out.json", JSON.stringify({ add, commit, pushes, gh }));
         command: process.execPath,
         args: [join(cwd, "push.cjs")],
         cwd,
+        executionEnvironmentCwd: cwd,
         env: {
           PATH: process.env.PATH,
           HOME: hostHome,
@@ -292,7 +300,9 @@ fs.writeFileSync("push-out.json", JSON.stringify({ add, commit, pushes, gh }));
       });
       const ran = runPlan(plan);
       expect(ran.status, ran.stderr).toBe(0);
-      const out = JSON.parse(readFileSync(join(cwd, "push-out.json"), "utf8")) as {
+      const out = JSON.parse(
+        readFileSync(join(cwd, "push-out.json"), "utf8"),
+      ) as {
         add: { status: number };
         commit: { status: number };
         pushes: Array<{ status: number | null }>;
@@ -307,9 +317,7 @@ fs.writeFileSync("push-out.json", JSON.stringify({ add, commit, pushes, gh }));
     } finally {
       await remote.close();
     }
-    },
-    30_000,
-  );
+  }, 30_000);
 
   it("fails createAcpAgentConnection before spawn when none sandbox cannot launch", () => {
     expect(() =>
@@ -324,7 +332,7 @@ fs.writeFileSync("push-out.json", JSON.stringify({ add, commit, pushes, gh }));
         onRequest() {},
         onExit() {},
       }),
-    ).toThrow(/cwd is not a directory/);
+    ).toThrow("ACP sandbox rejected execution cwd");
   });
 
   it("spawns a none session through bwrap and a git session without wrapping", async () => {
@@ -334,6 +342,7 @@ fs.writeFileSync("push-out.json", JSON.stringify({ add, commit, pushes, gh }));
         command: process.execPath,
         args: ["-e", "process.exit(0)"],
         cwd,
+        executionEnvironmentCwd: cwd,
         env: { PATH: process.env.PATH },
         deliveryAuthority: "none",
         recordThreadId: null,
@@ -349,6 +358,7 @@ fs.writeFileSync("push-out.json", JSON.stringify({ add, commit, pushes, gh }));
       command: process.execPath,
       args: ["-e", "0"],
       cwd,
+      executionEnvironmentCwd: cwd,
       env: { PATH: process.env.PATH },
     });
     expect(gitPlan.command).toBe(process.execPath);
@@ -375,15 +385,20 @@ fs.writeFileSync("live-out.json", JSON.stringify(report));
       command: process.execPath,
       args: [join(cwd, "live.cjs")],
       cwd,
+      executionEnvironmentCwd: cwd,
       env: { PATH: process.env.PATH, HOME: homedir() },
       bwrapPath: "/usr/bin/bwrap",
       platform: "linux",
       hostHome: homedir(),
     });
-    expect(plan.args.includes("--tmpfs") && plan.args.includes(homedir())).toBe(true);
+    expect(plan.args.includes("--tmpfs") && plan.args.includes(homedir())).toBe(
+      true,
+    );
     const ran = runPlan(plan);
     expect(ran.status, ran.stderr).toBe(0);
-    const report = JSON.parse(readFileSync(join(cwd, "live-out.json"), "utf8")) as {
+    const report = JSON.parse(
+      readFileSync(join(cwd, "live-out.json"), "utf8"),
+    ) as {
       ssh: boolean;
       gh: boolean;
       grokUnbound: boolean;
@@ -417,7 +432,9 @@ fs.writeFileSync("live-out.json", JSON.stringify(report));
           return;
         }
         if (parsed.kind === "initialized") {
-          socket.end(`${JSON.stringify({ ok: true, content: "", images: [] })}\n`);
+          socket.end(
+            `${JSON.stringify({ ok: true, content: "", images: [] })}\n`,
+          );
           return;
         }
         if (parsed.kind === "toolCall" && parsed.tool === "checkpoint") {
@@ -434,7 +451,9 @@ fs.writeFileSync("live-out.json", JSON.stringify(report));
         socket.end(`${JSON.stringify({ ok: false, error: "unexpected" })}\n`);
       });
     });
-    await new Promise<void>((resolve) => toolServer.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>((resolve) =>
+      toolServer.listen(0, "127.0.0.1", resolve),
+    );
     try {
       const address = toolServer.address();
       if (!address || typeof address === "string") {
@@ -443,7 +462,9 @@ fs.writeFileSync("live-out.json", JSON.stringify(report));
       const helper = resolveAcpMcpHelperRuntime({
         execPath: process.execPath,
         execArgv: ["--conditions=source", "--import", "tsx"],
-        bridgeModulePath: fileURLToPath(new URL("./bridge/bridge.ts", import.meta.url)),
+        bridgeModulePath: fileURLToPath(
+          new URL("./bridge/bridge.ts", import.meta.url),
+        ),
       });
       const root = scratchDir("wt-bwrap-mcp-");
       const hostHome = join(root, "home");
@@ -532,20 +553,28 @@ waitFor('"serverInfo"').then(() => new Promise((resolve) => setTimeout(resolve, 
         command: process.execPath,
         args: [join(cwd, "launch-mcp.cjs")],
         cwd,
+        executionEnvironmentCwd: cwd,
         env: { PATH: process.env.PATH, HOME: hostHome },
         bwrapPath: "/usr/bin/bwrap",
         platform: "linux",
         hostHome,
         runtimeRoBinds: helper.roBinds,
       });
-      expect(plan.roBinds.some((bind) => bind.endsWith("wt-delivery-authority"))).toBe(
-        true,
-      );
+      expect(
+        plan.roBinds.some((bind) => bind.endsWith("wt-delivery-authority")),
+      ).toBe(true);
       const ran = await runPlanAsync(plan);
       const outPath = join(cwd, "mcp-out.json");
-      const dumped = existsSync(outPath) ? readFileSync(outPath, "utf8") : "missing mcp-out.json";
-      expect(ran.status, `${ran.stderr}\n${ran.stdout}\n${dumped}\ntcp=${JSON.stringify(tcpLines)}`).toBe(0);
-      const out = JSON.parse(readFileSync(join(cwd, "mcp-out.json"), "utf8")) as {
+      const dumped = existsSync(outPath)
+        ? readFileSync(outPath, "utf8")
+        : "missing mcp-out.json";
+      expect(
+        ran.status,
+        `${ran.stderr}\n${ran.stdout}\n${dumped}\ntcp=${JSON.stringify(tcpLines)}`,
+      ).toBe(0);
+      const out = JSON.parse(
+        readFileSync(join(cwd, "mcp-out.json"), "utf8"),
+      ) as {
         stdout: string;
         ssh: string;
       };

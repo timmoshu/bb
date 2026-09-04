@@ -1,10 +1,12 @@
 import { DEFAULTS } from "./defaults.js";
 import {
   readEnvVarWithDefault,
+  readOptionalEnvVar,
   resolveEnvLoader,
   type EnvLoaderArgs,
 } from "./env.js";
-import { BB_LOG_LEVEL_ENV } from "./env-vars.js";
+import { BB_LOG_LEVEL_ENV, BB_WT_WORK_CWD_ROOT_ENV } from "./env-vars.js";
+import { assignIfDefined } from "./objects.js";
 import { resolveRuntimeDataDir, type BbRuntimeMode } from "./runtime.js";
 
 export interface LogLevelConfig {
@@ -15,6 +17,7 @@ type LoadLogLevelConfigArgs = EnvLoaderArgs;
 
 export interface CommonConfig extends LogLevelConfig {
   BB_DATA_DIR: string;
+  BB_WT_WORK_CWD_ROOT?: string;
 }
 
 export interface LoadCommonConfigArgs extends EnvLoaderArgs {
@@ -49,7 +52,7 @@ export function loadCommonConfig(
     mode: loader.mode,
   });
 
-  return {
+  const config: CommonConfig = {
     ...logLevelConfig,
     BB_DATA_DIR: resolveRuntimeDataDir({
       env: loader.env,
@@ -58,4 +61,14 @@ export function loadCommonConfig(
       repoRoot: args.repoRoot,
     }),
   };
+  assignIfDefined({
+    key: "BB_WT_WORK_CWD_ROOT",
+    target: config,
+    value: readOptionalEnvVar({
+      context: loader.context,
+      definition: BB_WT_WORK_CWD_ROOT_ENV,
+      env: loader.env,
+    }),
+  });
+  return config;
 }

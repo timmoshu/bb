@@ -202,6 +202,7 @@ export async function startHostDaemon(
       releaseLock,
       localApiConfig,
       runtimeShellEnv,
+      workTogetherWorkCwdRoot: hostDaemonConfig.BB_WT_WORK_CWD_ROOT,
       runtimeShellEnvResolvedAtMs,
       resolveRuntimeShellEnv,
       hostWatcher,

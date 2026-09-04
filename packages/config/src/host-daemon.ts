@@ -12,6 +12,7 @@ import {
 import {
   BB_APP_URL_ENV,
   BB_DEV_APP_PORT_ENV,
+  BB_WT_WORK_CWD_ROOT_ENV,
   DEFAULT_BB_APP_URL,
 } from "./env-vars.js";
 import { assignIfDefined } from "./objects.js";
@@ -25,6 +26,7 @@ interface HostDaemonConnectionConfig {
   BB_DEV_APP_PORT?: number;
   BB_HOST_DAEMON_PORT: number;
   BB_SERVER_URL: string;
+  BB_WT_WORK_CWD_ROOT?: string;
 }
 
 interface HostDaemonConfig extends CommonConfig, HostDaemonConnectionConfig {}
@@ -92,11 +94,21 @@ export function loadHostDaemonConnectionConfig(
     definition: BB_DEV_APP_PORT_ENV,
     env: loader.env,
   });
+  const workCwdRoot = readOptionalEnvVar({
+    context: loader.context,
+    definition: BB_WT_WORK_CWD_ROOT_ENV,
+    env: loader.env,
+  });
 
   assignIfDefined({
     key: "BB_DEV_APP_PORT",
     target: config,
     value: devAppPort,
+  });
+  assignIfDefined({
+    key: "BB_WT_WORK_CWD_ROOT",
+    target: config,
+    value: workCwdRoot,
   });
 
   return config;

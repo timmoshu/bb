@@ -110,7 +110,7 @@ export async function createThreadForkFromRequest(
   const isSeedOnlyIdleFork =
     visibleInput.length === 0 && agentContextSeed.length > 0;
 
-  return createThreadFromRequest(
+  const forked = await createThreadFromRequest(
     deps,
     {
       environment: resolveForkEnvironment(sourceEnvironment, {
@@ -148,6 +148,8 @@ export async function createThreadForkFromRequest(
     {
       forkSourceEnvironmentId: sourceEnvironment.id,
       ...(isSeedOnlyIdleFork ? { providerInput: [] } : {}),
+      workTogetherContextSourceThreadId: sourceThread.id,
     },
   );
+  return forked;
 }

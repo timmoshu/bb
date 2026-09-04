@@ -338,10 +338,28 @@ describe("consumer-specific config", () => {
     expect(
       loadServerConfig({
         env: createServerRuntimeEnv({
-          BB_WORK_TOGETHER_INTEGRATION_TOKEN: "wt-integration-token-32chars-ok!",
+          BB_WORK_TOGETHER_INTEGRATION_TOKEN:
+            "wt-integration-token-32chars-ok!",
         }),
       }).BB_WORK_TOGETHER_INTEGRATION_TOKEN,
     ).toBe("wt-integration-token-32chars-ok!");
+  });
+
+  it("carries the Work Together work cwd root to server and host daemon", () => {
+    const root = "/tmp/work-together-work-cwds";
+    expect(
+      loadServerConfig({
+        env: createServerRuntimeEnv({ BB_WT_WORK_CWD_ROOT: root }),
+      }).BB_WT_WORK_CWD_ROOT,
+    ).toBe(root);
+    expect(
+      loadHostDaemonConfig({
+        env: {
+          ...createHostDaemonRuntimeEnv({ BB_WT_WORK_CWD_ROOT: root }),
+          BB_DATA_DIR: "/tmp/bb-data",
+        },
+      }).BB_WT_WORK_CWD_ROOT,
+    ).toBe(root);
   });
 
   it("defaults the server bind host to loopback", () => {

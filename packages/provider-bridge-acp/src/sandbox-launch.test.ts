@@ -4,15 +4,13 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  AcpSandboxLaunchError,
-  planAcpAgentLaunch,
-} from "./sandbox-launch.js";
+import { AcpSandboxLaunchError, planAcpAgentLaunch } from "./sandbox-launch.js";
 
 const scratch: string[] = [];
 
@@ -52,7 +50,11 @@ function git(cwd: string, args: string[]): string {
 
 describe("planAcpAgentLaunch", () => {
   it("passes git sessions through unchanged", () => {
-    const env = { PATH: "/usr/bin", GH_TOKEN: "host-token", HOME: "/home/host" };
+    const env = {
+      PATH: "/usr/bin",
+      GH_TOKEN: "host-token",
+      HOME: "/home/host",
+    };
     const plan = planAcpAgentLaunch({
       deliveryAuthority: "git",
       command: "grok",
@@ -72,6 +74,70 @@ describe("planAcpAgentLaunch", () => {
     });
   });
 
+  it("enforces managed-root authority and uses a pinned cwd bind source", () => {
+    const root = scratchDir("wt-sandbox-authority-");
+    const hostHome = join(root, "home");
+    const environmentCwd = join(hostHome, "environment");
+    const managedRoot = join(hostHome, "state", "work-cwds");
+    const cwd = join(managedRoot, "work-1");
+    mkdirSync(environmentCwd, { recursive: true });
+    mkdirSync(cwd, { recursive: true });
+    const plan = planAcpAgentLaunch({
+      deliveryAuthority: "none",
+      command: process.execPath,
+      args: ["-e", "0"],
+      cwd,
+      executionEnvironmentCwd: environmentCwd,
+      workTogetherWorkCwdRoot: managedRoot,
+      cwdBindSource: "/proc/self/fd/3",
+      env: { PATH: process.env.PATH },
+      bwrapPath: "/usr/bin/bwrap",
+      platform: "linux",
+      hostHome,
+    });
+    expect(plan.cwd).toBe("/");
+    expect(plan.rwBinds).toEqual([cwd]);
+    expect(
+      plan.args.some(
+        (arg, index) =>
+          arg === "--bind" &&
+          plan.args[index + 1] === "/proc/self/fd/3" &&
+          plan.args[index + 2] === cwd,
+      ),
+    ).toBe(true);
+    const outside = join(hostHome, "outside");
+    mkdirSync(outside);
+    expect(() =>
+      planAcpAgentLaunch({
+        deliveryAuthority: "none",
+        command: process.execPath,
+        args: ["-e", "0"],
+        cwd: outside,
+        executionEnvironmentCwd: environmentCwd,
+        workTogetherWorkCwdRoot: managedRoot,
+        env: { PATH: process.env.PATH },
+        bwrapPath: "/usr/bin/bwrap",
+        platform: "linux",
+        hostHome,
+      }),
+    ).toThrow("ACP sandbox rejected execution cwd");
+    for (const forbidden of ["/", hostHome]) {
+      expect(() =>
+        planAcpAgentLaunch({
+          deliveryAuthority: "none",
+          command: process.execPath,
+          args: ["-e", "0"],
+          cwd: forbidden,
+          executionEnvironmentCwd: forbidden,
+          env: { PATH: process.env.PATH },
+          bwrapPath: "/usr/bin/bwrap",
+          platform: "linux",
+          hostHome,
+        }),
+      ).toThrow("ACP sandbox rejected execution cwd");
+    }
+  });
+
   it("fails closed when bwrap is missing or not a file", () => {
     const cwd = scratchDir("wt-sandbox-cwd-");
     expect(() =>
@@ -80,6 +146,7 @@ describe("planAcpAgentLaunch", () => {
         command: process.execPath,
         args: ["-e", "0"],
         cwd,
+        executionEnvironmentCwd: cwd,
         env: { PATH: "/usr/bin" },
         bwrapPath: join(cwd, "missing-bwrap"),
         platform: "linux",
@@ -95,6 +162,7 @@ describe("planAcpAgentLaunch", () => {
         command: process.execPath,
         args: ["-e", "0"],
         cwd,
+        executionEnvironmentCwd: cwd,
         env: { PATH: "/usr/bin" },
         bwrapPath: join(cwd, "bwrap-dir"),
         platform: "linux",
@@ -111,6 +179,7 @@ describe("planAcpAgentLaunch", () => {
         command: process.execPath,
         args: [],
         cwd,
+        executionEnvironmentCwd: cwd,
         env: {},
         platform: "darwin",
         hostHome: cwd,
@@ -138,6 +207,7 @@ describe("planAcpAgentLaunch", () => {
       command: grokBin,
       args: ["acp"],
       cwd,
+      executionEnvironmentCwd: cwd,
       env: {
         PATH: "/usr/bin",
         HOME: hostHome,
@@ -178,6 +248,12 @@ describe("planAcpAgentLaunch", () => {
     expect(plan.binds).toContain(join(hostHome, ".grok"));
     expect(plan.rwBinds).toContain(cwd);
     expect(plan.rwBinds).toContain(join(hostHome, ".grok"));
+    expect(
+      plan.args.slice(
+        plan.args.indexOf("--chdir"),
+        plan.args.indexOf("--chdir") + 2,
+      ),
+    ).toEqual(["--chdir", cwd]);
     expect(plan.roBinds).not.toContain(join(hostHome, ".grok"));
     expect(plan.binds).not.toContain(join(hostHome, ".ssh"));
     expect(plan.binds).not.toContain(join(hostHome, ".config"));
@@ -215,6 +291,7 @@ describe("planAcpAgentLaunch", () => {
       command: process.execPath,
       args: ["-e", "0"],
       cwd: room,
+      executionEnvironmentCwd: room,
       env: { PATH: process.env.PATH },
       bwrapPath: "/usr/bin/bwrap",
       platform: "linux",
@@ -244,10 +321,11 @@ describe("planAcpAgentLaunch", () => {
         command: process.execPath,
         args: ["-e", "0"],
         cwd,
+        executionEnvironmentCwd: cwd,
         env: { PATH: process.env.PATH },
         bwrapPath: "/usr/bin/bwrap",
         platform: "linux",
-        hostHome: cwd,
+        hostHome: dirname(cwd),
       }),
     ).toThrow(/embedded git credentials/);
   });
@@ -265,6 +343,7 @@ describe("planAcpAgentLaunch", () => {
       command: process.execPath,
       args: ["-e", "0"],
       cwd,
+      executionEnvironmentCwd: cwd,
       env: { PATH: process.env.PATH },
       bwrapPath: "/usr/bin/bwrap",
       platform: "linux",
@@ -288,6 +367,7 @@ describe("planAcpAgentLaunch", () => {
         command: process.execPath,
         args: ["-e", "0"],
         cwd,
+        executionEnvironmentCwd: cwd,
         env: { PATH: process.env.PATH },
         bwrapPath: "/usr/bin/bwrap",
         platform: "linux",
@@ -295,5 +375,25 @@ describe("planAcpAgentLaunch", () => {
         runtimeRoBinds: [join(root, "missing-release")],
       }),
     ).toThrow(/MCP runtime path is missing/);
+  });
+
+  it("rejects a symlinked cwd component before spawn", () => {
+    const root = scratchDir("wt-sandbox-symlink-");
+    const real = join(root, "real");
+    const linked = join(root, "linked");
+    mkdirSync(join(real, "work"), { recursive: true });
+    symlinkSync(real, linked);
+    expect(() =>
+      planAcpAgentLaunch({
+        deliveryAuthority: "none",
+        command: process.execPath,
+        args: ["-e", "0"],
+        cwd: join(linked, "work"),
+        env: { PATH: process.env.PATH },
+        bwrapPath: "/usr/bin/bwrap",
+        platform: "linux",
+        hostHome: root,
+      }),
+    ).toThrow("ACP sandbox rejected execution cwd");
   });
 });

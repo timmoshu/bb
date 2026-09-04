@@ -505,14 +505,35 @@ export type RuntimePermissionPolicy = z.infer<
 export const promptModeSchema = z.literal("plan");
 export type PromptMode = z.infer<typeof promptModeSchema>;
 
-const runtimeThreadExecutionBaseOptionsSchema = z.object({
-  model: z.string().min(1),
-  serviceTier: serviceTierSchema,
-  reasoningLevel: reasoningLevelSchema,
-  promptMode: promptModeSchema.optional(),
-  providerOptions: jsonObjectSchema,
-  deliveryAuthority: deliveryAuthoritySchema,
-});
+const runtimeThreadExecutionBaseOptionsSchema = z
+  .object({
+    model: z.string().min(1),
+    serviceTier: serviceTierSchema,
+    reasoningLevel: reasoningLevelSchema,
+    promptMode: promptModeSchema.optional(),
+    providerOptions: jsonObjectSchema,
+    deliveryAuthority: deliveryAuthoritySchema,
+    executionCwd: z.string().min(1).optional(),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.deliveryAuthority === "none" &&
+      value.executionCwd === undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["executionCwd"],
+        message: "executionCwd is required",
+      });
+    }
+    if (value.deliveryAuthority === "git" && value.executionCwd !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["executionCwd"],
+        message: "executionCwd is forbidden",
+      });
+    }
+  });
 
 export const runtimeThreadExecutionOptionsSchema =
   runtimeThreadExecutionBaseOptionsSchema.and(runtimePermissionPolicySchema);

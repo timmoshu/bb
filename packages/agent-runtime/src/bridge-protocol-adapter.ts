@@ -143,6 +143,9 @@ function toBridgeWireOptions(
     approvalReviewer,
     permissionEscalation,
     deliveryAuthority,
+    executionCwd,
+    executionEnvironmentCwd,
+    workTogetherWorkCwdRoot,
   } = options;
   const providerOptions = {
     ...staticProviderOptions,
@@ -160,6 +163,13 @@ function toBridgeWireOptions(
     approvalReviewer,
     permissionEscalation,
     deliveryAuthority,
+    ...(executionCwd !== undefined ? { executionCwd } : {}),
+    ...(executionEnvironmentCwd !== undefined
+      ? { executionEnvironmentCwd }
+      : {}),
+    ...(workTogetherWorkCwdRoot !== undefined
+      ? { workTogetherWorkCwdRoot }
+      : {}),
     ...(Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
   };
 }

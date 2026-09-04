@@ -38,6 +38,7 @@ export interface ServerRuntimeConfig {
   serverPort: number;
   sharedSkillRoots: ProviderNativeSkillRoots;
   transcriptionModel: string;
+  workTogetherWorkCwdRoot?: string;
   appUrl?: string;
   devAppPort?: number;
   launchId?: string;

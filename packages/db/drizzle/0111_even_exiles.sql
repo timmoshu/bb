@@ -1,0 +1,1 @@
+ALTER TABLE `work_together_thread_contexts` ADD `execution_cwd` text;

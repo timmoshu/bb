@@ -802,6 +802,7 @@ export const workTogetherThreadContexts = sqliteTable(
       .references(() => threads.id, { onDelete: "cascade" }),
     requestId: text("request_id"),
     digest: text("digest"),
+    executionCwd: text("execution_cwd"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },

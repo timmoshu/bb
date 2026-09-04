@@ -177,6 +177,17 @@ type ProviderProcess = RuntimeProviderProcess;
 const threadGoalClearResultSchema = z.object({ cleared: z.boolean() }).strict();
 const THREAD_GOAL_CLEAR_EVENT_TIMEOUT_MS = 5_000;
 const PREPARED_THREAD_REWIND_TTL_MS = 5 * 60_000;
+
+function runtimeExecutionCwd(
+  options: AgentRuntimeExecutionOptions,
+  environmentCwd: string,
+): string {
+  if (options.deliveryAuthority === "git") return environmentCwd;
+  if (options.executionCwd === undefined) {
+    throw new Error("Work Together execution cwd is missing");
+  }
+  return options.executionCwd;
+}
 const PREPARED_THREAD_REWIND_RETRY_MS = 30_000;
 
 interface ThreadRuntimeConfig {
@@ -1461,6 +1472,10 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
           const providerExecutionContext = toProviderExecutionContext({
             envVars,
             execOpts,
+            environmentCwd: options.workspacePath,
+            ...(options.workTogetherWorkCwdRoot === undefined
+              ? {}
+              : { workTogetherWorkCwdRoot: options.workTogetherWorkCwdRoot }),
             instructions,
             skillRoots,
           });
@@ -1468,7 +1483,7 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
             ? {
                 type: "thread/fork",
                 threadId,
-                cwd: options.workspacePath,
+                cwd: runtimeExecutionCwd(execOpts, options.workspacePath),
                 sourceProviderThreadId: fork.sourceProviderThreadId,
                 ...(fork.sourceProviderCheckpointId !== undefined
                   ? {
@@ -1484,7 +1499,7 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
             : {
                 type: "thread/start",
                 threadId,
-                cwd: options.workspacePath,
+                cwd: runtimeExecutionCwd(execOpts, options.workspacePath),
                 options: providerExecutionContext,
                 dynamicTools,
                 disallowedTools,
@@ -1615,12 +1630,19 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
             const adapterCommand: AdapterCommand = {
               type: "thread/fork",
               threadId: stagingThreadId,
-              cwd: options.workspacePath,
+              cwd: runtimeExecutionCwd(execOpts, options.workspacePath),
               sourceProviderThreadId,
               sourceProviderCheckpointId: retainThroughProviderCheckpoint,
               options: toProviderExecutionContext({
                 envVars,
                 execOpts,
+                environmentCwd: options.workspacePath,
+                ...(options.workTogetherWorkCwdRoot === undefined
+                  ? {}
+                  : {
+                      workTogetherWorkCwdRoot:
+                        options.workTogetherWorkCwdRoot,
+                    }),
                 instructions,
                 skillRoots,
               }),
@@ -1788,12 +1810,16 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
           const adapterCommand: AdapterCommand = {
             type: "thread/resume",
             threadId,
-            cwd: options.workspacePath,
+            cwd: runtimeExecutionCwd(execOpts, options.workspacePath),
             providerThreadId:
               providerThreadId ?? requireProviderThreadId(threadId),
             options: toProviderExecutionContext({
               envVars,
               execOpts,
+              environmentCwd: options.workspacePath,
+              ...(options.workTogetherWorkCwdRoot === undefined
+                ? {}
+                : { workTogetherWorkCwdRoot: options.workTogetherWorkCwdRoot }),
               instructions,
               skillRoots,
             }),
@@ -1875,6 +1901,10 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
             options: toProviderExecutionContext({
               envVars: {},
               execOpts,
+              environmentCwd: options.workspacePath,
+              ...(options.workTogetherWorkCwdRoot === undefined
+                ? {}
+                : { workTogetherWorkCwdRoot: options.workTogetherWorkCwdRoot }),
               instructions,
             }),
           };
@@ -1962,6 +1992,10 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
             options: toProviderExecutionContext({
               envVars: {},
               execOpts,
+              environmentCwd: options.workspacePath,
+              ...(options.workTogetherWorkCwdRoot === undefined
+                ? {}
+                : { workTogetherWorkCwdRoot: options.workTogetherWorkCwdRoot }),
               instructions,
             }),
           };

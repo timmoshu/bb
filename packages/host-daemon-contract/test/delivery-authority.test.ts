@@ -6,7 +6,11 @@ import {
 
 const BRIDGE_LAUNCH = {
   pluginId: "provider-pi",
-  source: { kind: "artifact" as const, digest: "a".repeat(64), byteLength: 4096 },
+  source: {
+    kind: "artifact" as const,
+    digest: "a".repeat(64),
+    byteLength: 4096,
+  },
   providerOptions: {},
   envPassthrough: [],
   capabilities: {
@@ -60,27 +64,55 @@ describe("deliveryAuthority on protocol 175", () => {
   it("requires none or git and reconstructs the exact value", () => {
     for (const deliveryAuthority of ["none", "git"] as const) {
       const parsed = hostDaemonCommandSchema.parse(
-        startCommand({ ...fullOptions, deliveryAuthority }),
+        startCommand({
+          ...fullOptions,
+          deliveryAuthority,
+          ...(deliveryAuthority === "none"
+            ? { executionCwd: "/tmp/work-cwd" }
+            : {}),
+        }),
       );
       expect(parsed.type).toBe("thread.start");
-      if (parsed.type !== "thread.start") throw new Error("expected thread.start");
+      if (parsed.type !== "thread.start")
+        throw new Error("expected thread.start");
       expect(parsed.options.deliveryAuthority).toBe(deliveryAuthority);
       const roundTrip = hostDaemonCommandSchema.parse(
         JSON.parse(JSON.stringify(parsed)),
       );
       expect(roundTrip.type).toBe("thread.start");
-      if (roundTrip.type !== "thread.start") throw new Error("expected thread.start");
+      if (roundTrip.type !== "thread.start")
+        throw new Error("expected thread.start");
       expect(roundTrip.options.deliveryAuthority).toBe(deliveryAuthority);
+      expect(roundTrip.options.executionCwd).toBe(
+        deliveryAuthority === "none" ? "/tmp/work-cwd" : undefined,
+      );
     }
   });
 
   it("rejects missing and unknown authority instead of granting git", () => {
-    expect(hostDaemonCommandSchema.safeParse(startCommand(fullOptions)).success).toBe(
-      false,
-    );
+    expect(
+      hostDaemonCommandSchema.safeParse(startCommand(fullOptions)).success,
+    ).toBe(false);
     expect(
       hostDaemonCommandSchema.safeParse(
         startCommand({ ...fullOptions, deliveryAuthority: "ssh" }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it("rejects none without an execution cwd and git with a forged cwd", () => {
+    expect(
+      hostDaemonCommandSchema.safeParse(
+        startCommand({ ...fullOptions, deliveryAuthority: "none" }),
+      ).success,
+    ).toBe(false);
+    expect(
+      hostDaemonCommandSchema.safeParse(
+        startCommand({
+          ...fullOptions,
+          deliveryAuthority: "git",
+          executionCwd: "/forged",
+        }),
       ).success,
     ).toBe(false);
   });

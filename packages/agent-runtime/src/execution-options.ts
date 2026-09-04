@@ -4,7 +4,7 @@ import type {
   AgentRuntimeSkillRoot,
 } from "./types.js";
 import type { ProviderExecutionContext } from "./provider-adapter.js";
-import type { RuntimePermissionPolicy } from "@bb/domain";
+import { runtimePermissionPolicySchema } from "@bb/domain";
 
 interface AssertProviderSupportsExecutionOptionsArgs {
   adapter: BridgeProtocolAdapter;
@@ -13,10 +13,12 @@ interface AssertProviderSupportsExecutionOptionsArgs {
 }
 
 interface ToProviderExecutionContextArgs {
+  environmentCwd: string;
   envVars: Record<string, string>;
   execOpts: AgentRuntimeExecutionOptions;
   instructions: string | undefined;
   skillRoots?: readonly AgentRuntimeSkillRoot[];
+  workTogetherWorkCwdRoot?: string;
 }
 
 export function assertProviderSupportsExecutionOptions(
@@ -46,7 +48,7 @@ export function assertProviderSupportsExecutionOptions(
 export function toProviderExecutionContext(
   args: ToProviderExecutionContextArgs,
 ): ProviderExecutionContext {
-  const permissionPolicy: RuntimePermissionPolicy = args.execOpts;
+  const permissionPolicy = runtimePermissionPolicySchema.parse(args.execOpts);
   return {
     model: args.execOpts.model,
     serviceTier: args.execOpts.serviceTier,
@@ -57,6 +59,15 @@ export function toProviderExecutionContext(
     providerOptions: args.execOpts.providerOptions,
     ...permissionPolicy,
     deliveryAuthority: args.execOpts.deliveryAuthority,
+    ...(args.execOpts.deliveryAuthority === "none"
+      ? {
+          executionCwd: args.execOpts.executionCwd,
+          executionEnvironmentCwd: args.environmentCwd,
+          ...(args.workTogetherWorkCwdRoot === undefined
+            ? {}
+            : { workTogetherWorkCwdRoot: args.workTogetherWorkCwdRoot }),
+        }
+      : {}),
     instructions: args.instructions,
     envVars: args.envVars,
     ...(args.skillRoots && args.skillRoots.length > 0

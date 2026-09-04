@@ -1,9 +1,13 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { closeSync, constants, openSync, realpathSync } from "node:fs";
 import { createInterface } from "node:readline";
 import type { DeliveryAuthority } from "@bb/domain";
 import { experimental_recordProviderChildIo } from "@bb/provider-bridge-protocol/bridge-kit";
 import type { z } from "zod";
-import { planAcpAgentLaunch } from "../sandbox-launch.js";
+import {
+  AcpSandboxLaunchError,
+  planAcpAgentLaunch,
+} from "../sandbox-launch.js";
 
 const STDERR_TAIL_MAX_CHUNKS = 40;
 const CLOSED_STDIN_ERROR_CODES = new Set(["EPIPE", "ERR_STREAM_DESTROYED"]);
@@ -25,6 +29,8 @@ interface CreateAcpAgentConnectionOptions {
   cwd: string;
   env: Record<string, string | undefined>;
   deliveryAuthority: DeliveryAuthority;
+  executionEnvironmentCwd?: string;
+  workTogetherWorkCwdRoot?: string;
   runtimeRoBinds?: readonly string[];
   recordThreadId: string | null;
   onNotification(method: string, params: unknown): void;
@@ -142,21 +148,57 @@ function parseAgentLine(line: string): ParsedAgentMessage | null {
 export function createAcpAgentConnection(
   options: CreateAcpAgentConnectionOptions,
 ): AcpAgentConnection {
-  const launch = planAcpAgentLaunch({
-    deliveryAuthority: options.deliveryAuthority,
-    command: options.command,
-    args: options.args,
-    cwd: options.cwd,
-    env: options.env,
-    ...(options.runtimeRoBinds !== undefined
-      ? { runtimeRoBinds: options.runtimeRoBinds }
-      : {}),
-  });
-  const child: ChildProcess = spawn(launch.command, launch.args, {
-    cwd: launch.cwd,
-    env: launch.env,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  let pinnedCwdFd: number | null = null;
+  try {
+    if (options.deliveryAuthority === "none") {
+      pinnedCwdFd = openSync(
+        options.cwd,
+        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+      );
+      if (realpathSync(`/proc/self/fd/${pinnedCwdFd}`) !== options.cwd) {
+        throw new Error("cwd changed");
+      }
+    }
+  } catch {
+    if (pinnedCwdFd !== null) closeSync(pinnedCwdFd);
+    throw new AcpSandboxLaunchError("ACP sandbox rejected execution cwd");
+  }
+  let launch: ReturnType<typeof planAcpAgentLaunch>;
+  try {
+    launch = planAcpAgentLaunch({
+      deliveryAuthority: options.deliveryAuthority,
+      command: options.command,
+      args: options.args,
+      cwd: options.cwd,
+      env: options.env,
+      ...(options.executionEnvironmentCwd === undefined
+        ? {}
+        : { executionEnvironmentCwd: options.executionEnvironmentCwd }),
+      ...(options.workTogetherWorkCwdRoot === undefined
+        ? {}
+        : { workTogetherWorkCwdRoot: options.workTogetherWorkCwdRoot }),
+      ...(pinnedCwdFd === null ? {} : { cwdBindSource: "/proc/self/fd/3" }),
+      ...(options.runtimeRoBinds !== undefined
+        ? { runtimeRoBinds: options.runtimeRoBinds }
+        : {}),
+    });
+  } catch (error) {
+    if (pinnedCwdFd !== null) closeSync(pinnedCwdFd);
+    throw error;
+  }
+  let child: ChildProcess;
+  try {
+    child = spawn(launch.command, launch.args, {
+      cwd: launch.cwd,
+      env: launch.env,
+      stdio:
+        pinnedCwdFd === null
+          ? ["pipe", "pipe", "pipe"]
+          : ["pipe", "pipe", "pipe", pinnedCwdFd],
+    });
+  } finally {
+    if (pinnedCwdFd !== null) closeSync(pinnedCwdFd);
+  }
   experimental_recordProviderChildIo(child, {
     threadId: options.recordThreadId,
   });

@@ -29,6 +29,7 @@ export function markWorkTogetherCoordinationThread(
     threadId,
     requestId: null,
     digest: null,
+    executionCwd: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -38,15 +39,34 @@ export function markWorkTogetherCoordinationThread(
 
 export function applyWorkTogetherThreadContext(
   db: DbConnection,
-  args: { threadId: string; requestId: string; digest: string },
+  args: {
+    threadId: string;
+    requestId: string;
+    digest: string;
+    executionCwd: string;
+  },
 ): WorkTogetherThreadContextRow {
   const now = Date.now();
   const existing = getWorkTogetherThreadContext(db, args.threadId);
+  if (
+    existing?.digest !== null &&
+    existing?.digest !== undefined
+  ) {
+    if (
+      existing.requestId === args.requestId &&
+      existing.digest === args.digest &&
+      existing.executionCwd === args.executionCwd
+    ) {
+      return existing;
+    }
+    throw new Error("work_together_thread_context_conflict");
+  }
   if (!existing) {
     const row: WorkTogetherThreadContextRow = {
       threadId: args.threadId,
       requestId: args.requestId,
       digest: args.digest,
+      executionCwd: args.executionCwd,
       createdAt: now,
       updatedAt: now,
     };
@@ -57,6 +77,7 @@ export function applyWorkTogetherThreadContext(
     .set({
       requestId: args.requestId,
       digest: args.digest,
+      executionCwd: args.executionCwd,
       updatedAt: now,
     })
     .where(eq(workTogetherThreadContexts.threadId, args.threadId))
@@ -66,4 +87,23 @@ export function applyWorkTogetherThreadContext(
     throw new Error("work_together_thread_context_missing");
   }
   return updated;
+}
+
+export function copyWorkTogetherThreadContext(
+  db: DbConnection,
+  args: { sourceThreadId: string; targetThreadId: string },
+): WorkTogetherThreadContextRow | undefined {
+  const source = getWorkTogetherThreadContext(db, args.sourceThreadId);
+  if (!source) return undefined;
+  const now = Date.now();
+  const row: WorkTogetherThreadContextRow = {
+    threadId: args.targetThreadId,
+    requestId: source.requestId,
+    digest: source.digest,
+    executionCwd: source.executionCwd,
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.insert(workTogetherThreadContexts).values(row).run();
+  return row;
 }

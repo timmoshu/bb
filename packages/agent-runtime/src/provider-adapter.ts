@@ -33,6 +33,9 @@ export type ProviderExecutionContext = {
   envVars?: Record<string, string>;
   skillRoots?: readonly AgentRuntimeSkillRoot[];
   deliveryAuthority: DeliveryAuthority;
+  executionCwd?: string;
+  executionEnvironmentCwd?: string;
+  workTogetherWorkCwdRoot?: string;
 } & RuntimePermissionPolicy;
 
 export type AdapterCommand =

@@ -1689,6 +1689,12 @@ async function startAgentSession(
     cwd: params.cwd,
     env: childEnv,
     deliveryAuthority: params.deliveryAuthority,
+    ...(params.executionEnvironmentCwd === undefined
+      ? {}
+      : { executionEnvironmentCwd: params.executionEnvironmentCwd }),
+    ...(params.workTogetherWorkCwdRoot === undefined
+      ? {}
+      : { workTogetherWorkCwdRoot: params.workTogetherWorkCwdRoot }),
     ...(noneHelper !== null ? { runtimeRoBinds: noneHelper.roBinds } : {}),
     recordThreadId: bbThreadId,
     onNotification: (method, notificationParams) =>

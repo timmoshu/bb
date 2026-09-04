@@ -1,10 +1,16 @@
 import {
+  applyWorkTogetherThreadContext,
   ensurePersonalProject,
   getEnvironment,
   getThread,
+  getWorkTogetherThreadContext,
   listEvents,
+  markWorkTogetherCoordinationThread,
   setQueuedThreadMessageGroupBoundary,
 } from "@bb/db";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   PERSONAL_PROJECT_ID,
   encodeClientTurnRequestIdNumber,
@@ -50,17 +56,18 @@ function seedForkSource(
     permissionMode?: "accept-edits" | "auto" | "full";
     reasoningLevel?: string;
     serviceTier?: string;
+    path?: string;
   } = {},
 ) {
   const { host } = seedHostSession(harness.deps);
   const { project } = seedProjectWithSource(harness.deps, {
     hostId: host.id,
-    path: "/tmp/public-thread-fork",
+    path: args.path ?? "/tmp/public-thread-fork",
   });
   const environment = seedEnvironment(harness.deps, {
     hostId: host.id,
     projectId: project.id,
-    path: "/tmp/public-thread-fork",
+    path: args.path ?? "/tmp/public-thread-fork",
   });
   const sourceThread = seedThread(harness.deps, {
     environmentId: environment.id,
@@ -167,6 +174,53 @@ async function createIdleSeededFork(
 }
 
 describe("public thread fork route", () => {
+  it("copies Work Together admitted cwd into a reuse fork before start", async () => {
+    const managedRoot = await mkdtemp(path.join(tmpdir(), "bb-wt-fork-root-"));
+    const admitted = path.join(managedRoot, "workspace", "work");
+    const environmentPath = await mkdtemp(
+      path.join(tmpdir(), "bb-wt-fork-env-"),
+    );
+    await mkdir(admitted, { recursive: true });
+    try {
+      await withTestHarness(
+        { workTogetherWorkCwdRoot: managedRoot },
+        async (harness) => {
+          const { sourceThread } = seedForkSource(harness, {
+            path: environmentPath,
+          });
+          markWorkTogetherCoordinationThread(harness.db, sourceThread.id);
+          applyWorkTogetherThreadContext(harness.db, {
+            threadId: sourceThread.id,
+            requestId: "req-wt-fork",
+            digest: "a".repeat(64),
+            executionCwd: admitted,
+          });
+          const response = await postFork(harness, {
+            sourceThreadId: sourceThread.id,
+            workspace: "reuse",
+          });
+          expect(response.status).toBe(201);
+          const fork = threadResponseSchema.parse(await readJson(response));
+          expect(
+            getWorkTogetherThreadContext(harness.db, fork.id)?.executionCwd,
+          ).toBe(admitted);
+          const queued = await waitForQueuedCommand(
+            harness,
+            ({ command }) =>
+              command.type === "thread.start" && command.threadId === fork.id,
+          );
+          if (queued.command.type !== "thread.start")
+            throw new Error("Expected thread.start");
+          expect(queued.command.options.deliveryAuthority).toBe("none");
+          expect(queued.command.options.executionCwd).toBe(admitted);
+        },
+      );
+    } finally {
+      await rm(managedRoot, { recursive: true, force: true });
+      await rm(environmentPath, { recursive: true, force: true });
+    }
+  });
+
   it("reuses a switched directory from a personal-project source", async () => {
     await withTestHarness(async (harness) => {
       const { environment, sourceThread } =

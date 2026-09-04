@@ -9,6 +9,7 @@ import {
   promptMentionResourceSchema,
   removeCommandMentionsFromPromptInput,
   runtimePermissionPolicySchema,
+  runtimeThreadExecutionOptionsSchema,
 } from "../src/shared-types.js";
 
 describe("permission modes", () => {
@@ -250,5 +251,47 @@ describe("prompt command input helpers", () => {
         { trigger: "/", name: "plan" },
       ),
     ).toEqual([{ type: "text", text: "", mentions: [] }]);
+  });
+});
+
+describe("Work Together execution cwd", () => {
+  const full = {
+    model: "gpt-5",
+    serviceTier: "default",
+    reasoningLevel: "medium",
+    providerOptions: {},
+    permissionMode: "full",
+    permissionScope: "full",
+    approvalReviewer: null,
+    permissionEscalation: null,
+  } as const;
+
+  it("requires executionCwd only for deliveryAuthority none", () => {
+    expect(
+      runtimeThreadExecutionOptionsSchema.safeParse({
+        ...full,
+        deliveryAuthority: "none",
+      }).success,
+    ).toBe(false);
+    expect(
+      runtimeThreadExecutionOptionsSchema.parse({
+        ...full,
+        deliveryAuthority: "none",
+        executionCwd: "/managed/work",
+      }).executionCwd,
+    ).toBe("/managed/work");
+    expect(
+      runtimeThreadExecutionOptionsSchema.parse({
+        ...full,
+        deliveryAuthority: "git",
+      }).executionCwd,
+    ).toBeUndefined();
+    expect(
+      runtimeThreadExecutionOptionsSchema.safeParse({
+        ...full,
+        deliveryAuthority: "git",
+        executionCwd: "/forged",
+      }).success,
+    ).toBe(false);
   });
 });

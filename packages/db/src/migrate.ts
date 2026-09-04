@@ -569,6 +569,57 @@ function applyMigrationStatements(
   apply();
 }
 
+const STAGED_WORK_TOGETHER_THREAD_CONTEXTS =
+  "_bb_work_together_thread_contexts_pending";
+
+function stageExistingWorkTogetherThreadContexts(
+  db: DbConnection,
+  migrationsFolder: string,
+): boolean {
+  if (
+    !tableExists(db, "__drizzle_migrations") ||
+    !tableExists(db, "work_together_thread_contexts")
+  ) {
+    return false;
+  }
+  const migration = requireExpectedAppliedMigration(
+    readExpectedAppliedMigrations(migrationsFolder),
+    "0110_small_earthquake",
+  );
+  if (readAppliedMigrationCreatedAts(db).has(migration.createdAt)) {
+    return false;
+  }
+  db.$client.exec(
+    `ALTER TABLE work_together_thread_contexts RENAME TO ${STAGED_WORK_TOGETHER_THREAD_CONTEXTS}`,
+  );
+  return true;
+}
+
+function restoreStagedWorkTogetherThreadContexts(db: DbConnection): void {
+  if (!tableExists(db, STAGED_WORK_TOGETHER_THREAD_CONTEXTS)) return;
+  if (!tableExists(db, "work_together_thread_contexts")) {
+    db.$client.exec(
+      `ALTER TABLE ${STAGED_WORK_TOGETHER_THREAD_CONTEXTS} RENAME TO work_together_thread_contexts`,
+    );
+    return;
+  }
+  const executionCwd = columnExists(
+    db,
+    STAGED_WORK_TOGETHER_THREAD_CONTEXTS,
+    "execution_cwd",
+  )
+    ? "execution_cwd"
+    : "NULL";
+  db.$client.exec(`
+    INSERT OR IGNORE INTO work_together_thread_contexts (
+      thread_id, request_id, digest, execution_cwd, created_at, updated_at
+    )
+    SELECT thread_id, request_id, digest, ${executionCwd}, created_at, updated_at
+    FROM ${STAGED_WORK_TOGETHER_THREAD_CONTEXTS};
+    DROP TABLE ${STAGED_WORK_TOGETHER_THREAD_CONTEXTS};
+  `);
+}
+
 function hasPublishedTimestampFallback(
   expectedMigration: ExpectedAppliedMigration,
   appliedCreatedAts: Set<number>,
@@ -1501,6 +1552,8 @@ export function migrate(db: DbConnection, options: MigrateOptions = {}): void {
       db,
       migrationsFolder,
     );
+    const stagedWorkTogetherThreadContexts =
+      stageExistingWorkTogetherThreadContexts(db, migrationsFolder);
     const stagedConnectMachineId = stageExistingConnectMachineIdColumn(
       db,
       migrationsFolder,
@@ -1509,6 +1562,9 @@ export function migrate(db: DbConnection, options: MigrateOptions = {}): void {
       drizzleMigrate(db, { migrationsFolder });
     } finally {
       if (stagedConnectMachineId) restoreStagedConnectMachineIdColumn(db);
+      if (stagedWorkTogetherThreadContexts) {
+        restoreStagedWorkTogetherThreadContexts(db);
+      }
     }
     applyReorderedCleanupMigrations(db, migrationsFolder);
     applyQueuedMessageGroupingSchema(db);

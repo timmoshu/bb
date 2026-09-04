@@ -184,6 +184,7 @@ export interface RuntimeManagerOptions {
   providerInstallationGateTtlMs?: number;
   providerMaintenanceIdleTimeoutMs?: number;
   shellEnv?: AgentRuntimeOptions["shellEnv"];
+  workTogetherWorkCwdRoot?: string;
   onEvent?: (args: { environmentId: string; event: ThreadEvent }) => void;
   threadStorageRootPath?: string | null;
   onInjectedSkillsChanged?: (args: InjectedSkillsChangedNotification) => void;
@@ -1349,6 +1350,7 @@ export class RuntimeManager {
       ...(args.skillConfig ? { skillRoots: args.skillConfig.skillRoots } : {}),
       ...(providerProcessEnv ? { env: providerProcessEnv } : {}),
       shellEnv,
+      workTogetherWorkCwdRoot: this.options.workTogetherWorkCwdRoot,
       threadStorageRootPath: this.options.threadStorageRootPath ?? undefined,
       bridgeBundleDir: this.options.bridgeBundleDir,
       onEvent: (event) => {

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,7 @@ interface CreateContractRuntimeArgs {
   launch?: CreateScriptedEchoLaunchOptions;
   onEvent?: (event: ThreadEvent) => void;
   onStderr?: (line: string) => void;
+  workTogetherWorkCwdRoot?: string;
 }
 
 interface ContractRuntime {
@@ -82,6 +83,9 @@ describe("createAgentRuntime command contracts", () => {
     const runtime = createScriptedEchoRuntime({
       runtime: {
         workspacePath: tmpDir,
+        ...(args.workTogetherWorkCwdRoot === undefined
+          ? {}
+          : { workTogetherWorkCwdRoot: args.workTogetherWorkCwdRoot }),
         env: { ...record.env, ...args.env },
         ...(args.additionalWorkspaceWriteRoots !== undefined
           ? {
@@ -126,6 +130,76 @@ describe("createAgentRuntime command contracts", () => {
         cwd: tmpDir,
         options: { providerOptions: { additionalWorkspaceWriteRoots } },
       });
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+
+  it("ignores a forged execution cwd for ordinary git runtime calls", async () => {
+    const { record, runtime } = createContractRuntime();
+    try {
+      await runtime.startThread({
+        environmentId: "env-1",
+        threadId: "t-git-forged-cwd",
+        projectId: "p1",
+        providerId: "fake",
+        options: { ...fullRuntimeOptions, executionCwd: join(tmpDir, "forged") },
+      });
+      expect(record.last("thread/start")?.params).toMatchObject({ cwd: tmpDir });
+      expect(record.last("thread/start")?.params).not.toHaveProperty(
+        "options.executionCwd",
+      );
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+
+  it("uses one admitted Work Together cwd for start, reconnect, and fork", async () => {
+    const admitted = join(tmpDir, "managed", "work");
+    mkdirSync(admitted, { recursive: true });
+    const { record, runtime } = createContractRuntime({
+      workTogetherWorkCwdRoot: join(tmpDir, "managed"),
+    });
+    const options = {
+      ...fullRuntimeOptions,
+      deliveryAuthority: "none" as const,
+      executionCwd: admitted,
+    };
+    try {
+      const started = await runtime.startThread({
+        environmentId: "env-1",
+        threadId: "t-wt-start",
+        projectId: "p1",
+        providerId: "fake",
+        options,
+      });
+      await runtime.resumeThread({
+        environmentId: "env-1",
+        threadId: "t-wt-resume",
+        projectId: "p1",
+        providerId: "fake",
+        providerThreadId: "provider-wt-resume",
+        options,
+      });
+      await runtime.startThread({
+        environmentId: "env-1",
+        threadId: "t-wt-fork",
+        projectId: "p1",
+        providerId: "fake",
+        fork: { sourceProviderThreadId: started.providerThreadId },
+        options,
+      });
+      for (const method of ["thread/start", "thread/resume", "thread/fork"]) {
+        expect(record.last(method)?.params).toMatchObject({
+          cwd: admitted,
+          options: {
+            deliveryAuthority: "none",
+            executionCwd: admitted,
+            executionEnvironmentCwd: tmpDir,
+            workTogetherWorkCwdRoot: join(tmpDir, "managed"),
+          },
+        });
+      }
     } finally {
       await runtime.shutdown();
     }

@@ -32,6 +32,7 @@ import type { ServerRuntimeConfig } from "./types.js";
 import { NotificationHub } from "./ws/hub.js";
 import { WatchInterestCoordinator } from "./ws/watch-interests.js";
 import { WorkspaceReadCaches } from "./services/environments/workspace-read-cache.js";
+import { resolveConfiguredWorkTogetherCwdRoot } from "./services/work-together-execution-cwd.js";
 import { HostSharedPortCoordinator } from "./ws/host-shared-ports.js";
 
 interface StartHttpListenerArgs {
@@ -107,6 +108,12 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
   }
   if (serverConfig.BB_SERVER_LAUNCH_ID !== undefined) {
     runtimeConfig.launchId = serverConfig.BB_SERVER_LAUNCH_ID;
+  }
+  const workTogetherWorkCwdRoot = resolveConfiguredWorkTogetherCwdRoot(
+    serverConfig.BB_WT_WORK_CWD_ROOT,
+  );
+  if (workTogetherWorkCwdRoot !== undefined) {
+    runtimeConfig.workTogetherWorkCwdRoot = workTogetherWorkCwdRoot;
   }
   const terminalSessions = new TerminalSessionLifecycle({
     config: runtimeConfig,

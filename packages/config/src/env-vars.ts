@@ -206,6 +206,13 @@ export const BB_WORK_TOGETHER_INTEGRATION_TOKEN_ENV = defineEnvVar<
   parse: parseOptionalTrimmedStringEnvValue,
 });
 
+export const BB_WT_WORK_CWD_ROOT_ENV = defineEnvVar<string | undefined>({
+  description:
+    "Canonical host root containing Work Together managed per-Work execution directories.",
+  name: "BB_WT_WORK_CWD_ROOT",
+  parse: parseOptionalTrimmedStringEnvValue,
+});
+
 export const BB_APP_SURFACE_ENV = defineEnvVar<AppSurface>({
   description:
     "Internal launcher marker for telemetry attribution. Set by bb-app and desktop launchers.",

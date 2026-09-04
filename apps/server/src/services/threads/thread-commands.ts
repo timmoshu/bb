@@ -1,11 +1,15 @@
-import { environments, events, getWorkTogetherThreadContext, threads } from "@bb/db";
+import {
+  environments,
+  events,
+  getWorkTogetherThreadContext,
+  threads,
+} from "@bb/db";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   PromptInput,
   PromptMode,
   ProjectExecutionDefaults,
   PermissionEscalation,
-  DeliveryAuthority,
   ResolvedThreadExecutionOptions,
   RuntimeThreadExecutionOptions,
   Thread,
@@ -41,6 +45,7 @@ import { clampPermissionModeToHost } from "../hosts/permission-ceiling.js";
 import type { ProviderRegistryService } from "../providers/provider-registry.js";
 import { resolveProviderPlanCommand } from "../providers/provider-plan-command.js";
 import { workspaceContextFromPath } from "../environments/workspace-command-target.js";
+import { resolveWorkTogetherExecutionCwd } from "../work-together-execution-cwd.js";
 import {
   requireBridgeLaunchForProviderId,
   resolveBridgeLaunchForProviderId,
@@ -119,7 +124,8 @@ export type PreparedTurnSubmitCommandPayload = Omit<
 >;
 
 interface RuntimeExecutionOptionsArgs {
-  deps: Pick<AppDeps, "db" | "providerRegistry">;
+  deps: Pick<AppDeps, "config" | "db" | "providerRegistry">;
+  environmentPath: string;
   execution: ResolvedThreadExecutionOptions;
   hostId: string;
   input: PromptInput[];
@@ -188,15 +194,6 @@ function resolvePromptMode(
     : undefined;
 }
 
-function resolveDeliveryAuthority(
-  deps: Pick<AppDeps, "db">,
-  threadId: string,
-): DeliveryAuthority {
-  return getWorkTogetherThreadContext(deps.db, threadId) === undefined
-    ? "git"
-    : "none";
-}
-
 function toRuntimeExecutionOptions(
   args: RuntimeExecutionOptionsArgs,
 ): RuntimeThreadExecutionOptions {
@@ -217,13 +214,30 @@ function toRuntimeExecutionOptions(
       permissionMode,
       ...(promptMode !== undefined ? { promptMode } : {}),
     }) ?? {};
+  const workTogetherContext = getWorkTogetherThreadContext(
+    args.deps.db,
+    args.threadId,
+  );
+  let executionCwd: string | undefined;
+  if (workTogetherContext !== undefined) {
+    if (workTogetherContext.executionCwd === null) {
+      throw new ApiError(409, "context_not_applied", "Context not applied");
+    }
+    executionCwd = resolveWorkTogetherExecutionCwd({
+      candidate: workTogetherContext.executionCwd,
+      environmentPath: args.environmentPath,
+      managedRoot: args.deps.config.workTogetherWorkCwdRoot,
+    });
+  }
   const base = {
     model: args.execution.model,
     serviceTier: args.execution.serviceTier,
     reasoningLevel: args.execution.reasoningLevel,
     ...(promptMode !== undefined ? { promptMode } : {}),
     providerOptions,
-    deliveryAuthority: resolveDeliveryAuthority(args.deps, args.threadId),
+    deliveryAuthority:
+      workTogetherContext === undefined ? ("git" as const) : ("none" as const),
+    ...(executionCwd === undefined ? {} : { executionCwd }),
   };
   if (permissionMode === "full") {
     return {
@@ -299,6 +313,7 @@ export async function buildThreadStartCommand(
     options: toRuntimeExecutionOptions({
       ...args,
       deps,
+      environmentPath: runtimeContext.workspacePath,
       hostId: args.environment.hostId,
       input: args.input,
       threadId: args.thread.id,
@@ -331,6 +346,7 @@ function buildPreparedTurnSubmitCommandPayload(
     options: toRuntimeExecutionOptions({
       ...args,
       input: args.input,
+      environmentPath: args.runtimeContext.workspacePath,
       projectId: args.runtimeContext.projectId,
       providerId: args.runtimeContext.providerId,
     }),

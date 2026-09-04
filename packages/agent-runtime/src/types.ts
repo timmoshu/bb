@@ -47,6 +47,7 @@ export interface AgentRuntimeProcessExitInfo {
 
 export interface AgentRuntimeOptions {
   workspacePath: string;
+  workTogetherWorkCwdRoot?: string;
 
   additionalWorkspaceWriteRoots?: readonly string[];
 

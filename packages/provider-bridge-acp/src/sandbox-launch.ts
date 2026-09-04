@@ -95,6 +95,9 @@ export interface PlanAcpAgentLaunchInput {
   bwrapPath?: string;
   platform?: NodeJS.Platform;
   runtimeRoBinds?: readonly string[];
+  executionEnvironmentCwd?: string;
+  workTogetherWorkCwdRoot?: string;
+  cwdBindSource?: string;
 }
 
 function definedEnv(
@@ -117,7 +120,37 @@ function pathInside(root: string, candidate: string): boolean {
   );
 }
 
-function ancestorDirectories(target: string, maskedRoots: readonly string[]): string[] {
+function canonicalExecutionDirectory(candidate: string, hostHome: string): string {
+  try {
+    const cwd = resolve(candidate);
+    if (cwd !== candidate || cwd === sep || cwd === hostHome) {
+      throw new Error("forbidden");
+    }
+    let current: string = sep;
+    for (const segment of cwd.slice(sep.length).split(sep).filter(Boolean)) {
+      current = join(current, segment);
+      if (!existsSync(current) || lstatSync(current).isSymbolicLink()) {
+        throw new Error("invalid");
+      }
+    }
+    const stats = lstatSync(cwd);
+    if (
+      !stats.isDirectory() ||
+      stats.isSymbolicLink() ||
+      realpathSync(cwd) !== cwd
+    ) {
+      throw new Error("invalid");
+    }
+    return cwd;
+  } catch {
+    throw new AcpSandboxLaunchError("ACP sandbox rejected execution cwd");
+  }
+}
+
+function ancestorDirectories(
+  target: string,
+  maskedRoots: readonly string[],
+): string[] {
   const resolved = resolve(target);
   const parent = dirname(resolved);
   const dirs: string[] = [];
@@ -149,7 +182,9 @@ function resolveAgentExecutable(
     }
     return realpathSync(resolved);
   }
-  const pathEntries = (env.PATH ?? "").split(":").filter((entry) => entry.length > 0);
+  const pathEntries = (env.PATH ?? "")
+    .split(":")
+    .filter((entry) => entry.length > 0);
   for (const entry of pathEntries) {
     const candidate = join(entry, command);
     if (existsSync(candidate)) {
@@ -190,7 +225,9 @@ function assertSafeGitDirectory(label: string, path: string): string {
     throw new AcpSandboxLaunchError(`ACP sandbox rejected a relative ${label}`);
   }
   if (!existsSync(path)) {
-    throw new AcpSandboxLaunchError(`ACP sandbox ${label} does not exist: ${path}`);
+    throw new AcpSandboxLaunchError(
+      `ACP sandbox ${label} does not exist: ${path}`,
+    );
   }
   const stats = lstatSync(path);
   if (stats.isSymbolicLink()) {
@@ -199,7 +236,9 @@ function assertSafeGitDirectory(label: string, path: string): string {
     );
   }
   if (!stats.isDirectory()) {
-    throw new AcpSandboxLaunchError(`ACP sandbox ${label} is not a directory: ${path}`);
+    throw new AcpSandboxLaunchError(
+      `ACP sandbox ${label} is not a directory: ${path}`,
+    );
   }
   const real = realpathSync(path);
   if (real === "/" || real === "/etc" || real === "/root") {
@@ -228,10 +267,15 @@ function gitBindPaths(cwd: string): string[] {
   } else if (gitStat.isFile()) {
     gitDir = readGitdirPointer(cwd, readFileSync(gitPath, "utf8"));
   } else {
-    throw new AcpSandboxLaunchError("ACP sandbox rejected an unusual .git path");
+    throw new AcpSandboxLaunchError(
+      "ACP sandbox rejected an unusual .git path",
+    );
   }
   const resolvedGitDir = assertSafeGitDirectory("git-dir", gitDir);
-  const commonDir = assertSafeGitDirectory("git-common-dir", readCommonDir(resolvedGitDir));
+  const commonDir = assertSafeGitDirectory(
+    "git-common-dir",
+    readCommonDir(resolvedGitDir),
+  );
   assertNoEmbeddedCredentials(join(resolvedGitDir, "config"));
   assertNoEmbeddedCredentials(join(commonDir, "config"));
   return [...new Set([resolvedGitDir, commonDir])];
@@ -291,15 +335,35 @@ export function planAcpAgentLaunch(
       `ACP sandbox helper missing or not a file: ${bwrapPath}`,
     );
   }
-  if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
-    throw new AcpSandboxLaunchError(`ACP sandbox cwd is not a directory: ${cwd}`);
-  }
-
   const hostHome = resolve(input.hostHome ?? homedir());
+  canonicalExecutionDirectory(cwd, hostHome);
+  if (input.executionEnvironmentCwd === undefined) {
+    throw new AcpSandboxLaunchError("ACP sandbox rejected execution cwd");
+  }
+  const environmentCwd = canonicalExecutionDirectory(
+    input.executionEnvironmentCwd,
+    hostHome,
+  );
+  const managedExecution = cwd !== environmentCwd;
+  if (managedExecution) {
+    if (input.workTogetherWorkCwdRoot === undefined) {
+      throw new AcpSandboxLaunchError("ACP sandbox rejected execution cwd");
+    }
+    const managedRoot = canonicalExecutionDirectory(
+      input.workTogetherWorkCwdRoot,
+      hostHome,
+    );
+    if (!pathInside(managedRoot, cwd) || managedRoot === cwd) {
+      throw new AcpSandboxLaunchError("ACP sandbox rejected execution cwd");
+    }
+  }
   const env = sanitizeNoneEnv(input.env, hostHome);
   const executable = resolveAgentExecutable(input.command, env);
   const grokHome = join(hostHome, ".grok");
-  const rwBinds = new Set<string>([cwd, ...gitBindPaths(cwd)]);
+  const rwBinds = new Set<string>([
+    cwd,
+    ...(managedExecution ? [] : gitBindPaths(cwd)),
+  ]);
   if (existsSync(grokHome) && pathInside(grokHome, executable)) {
     rwBinds.add(grokHome);
   }
@@ -352,14 +416,20 @@ export function planAcpAgentLaunch(
   for (const root of maskedRoots) {
     bwrapArgs.push("--tmpfs", root);
   }
-  for (const dir of [...dirs].sort((left, right) => left.length - right.length)) {
+  for (const dir of [...dirs].sort(
+    (left, right) => left.length - right.length,
+  )) {
     bwrapArgs.push("--dir", dir);
   }
   for (const bind of [...roBinds].sort()) {
     bwrapArgs.push("--ro-bind", bind, bind);
   }
   for (const bind of [...rwBinds].sort()) {
-    bwrapArgs.push("--bind", bind, bind);
+    bwrapArgs.push(
+      "--bind",
+      bind === cwd ? (input.cwdBindSource ?? bind) : bind,
+      bind,
+    );
   }
   bwrapArgs.push("--chdir", cwd, "--", executable, ...input.args);
 
@@ -368,7 +438,7 @@ export function planAcpAgentLaunch(
   return {
     command: bwrapPath,
     args: bwrapArgs,
-    cwd,
+    cwd: sep,
     env,
     bwrap: true,
     rwBinds: rwBindList,

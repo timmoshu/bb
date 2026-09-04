@@ -1,5 +1,6 @@
 import {
   deleteThread,
+  copyWorkTogetherThreadContext,
   findProjectEnvironmentByHostPath,
   getEnvironment,
   getThread,
@@ -91,6 +92,7 @@ interface CreateProvisioningThreadArgs {
   request: ThreadCreateServiceRequest;
   providerInput?: ThreadCreateServiceRequestInput["input"];
   threadId?: string;
+  workTogetherContextSourceThreadId?: string;
 }
 
 interface ResolveForkPointArgs {
@@ -438,6 +440,12 @@ async function createProvisioningThread(
     environmentId: args.environmentId,
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
+  if (args.workTogetherContextSourceThreadId !== undefined) {
+    copyWorkTogetherThreadContext(deps.db, {
+      sourceThreadId: args.workTogetherContextSourceThreadId,
+      targetThreadId: thread.id,
+    });
+  }
   let execution: Awaited<ReturnType<typeof buildExecutionOptions>>;
   let context: ThreadProvisionContext;
   try {
@@ -516,6 +524,7 @@ export async function createThreadFromRequest(
     providerInput?: ThreadCreateServiceRequestInput["input"];
     forkSourceEnvironmentId?: string;
     threadId?: string;
+    workTogetherContextSourceThreadId?: string;
   } = {},
 ) {
   const project = requirePublicProjectForThreadCreate(
@@ -817,6 +826,12 @@ export async function createThreadFromRequest(
       ? { providerInput: options.providerInput }
       : {}),
     ...(options.threadId === undefined ? {} : { threadId: options.threadId }),
+    ...(options.workTogetherContextSourceThreadId === undefined
+      ? {}
+      : {
+          workTogetherContextSourceThreadId:
+            options.workTogetherContextSourceThreadId,
+        }),
     request,
   });
   deps.telemetry.capture({

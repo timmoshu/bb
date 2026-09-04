@@ -120,6 +120,7 @@ interface CreateHostDaemonAppOptions {
   localApiConfig: HostDaemonLocalApiConfig | null;
   createRuntime?: RuntimeManagerOptions["createRuntime"];
   runtimeShellEnv?: AgentRuntimeOptions["shellEnv"];
+  workTogetherWorkCwdRoot?: string;
   runtimeShellEnvResolvedAtMs?: number;
   resolveRuntimeShellEnv?: () => Promise<
     NonNullable<AgentRuntimeOptions["shellEnv"]>
@@ -507,6 +508,7 @@ export async function createHostDaemonApp(
     hostWatcher: options.hostWatcher,
     logger: options.logger,
     shellEnv: options.runtimeShellEnv,
+    workTogetherWorkCwdRoot: options.workTogetherWorkCwdRoot,
     onEvent: ({ environmentId, event }) => {
       try {
         eventSink.emit({

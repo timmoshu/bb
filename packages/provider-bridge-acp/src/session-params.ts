@@ -25,6 +25,9 @@ export interface AcpSessionExecutionOptions {
   permissionMode: PermissionMode;
   skillRoots?: readonly AcpSkillRoot[] | undefined;
   deliveryAuthority: DeliveryAuthority;
+  executionCwd?: string | undefined;
+  executionEnvironmentCwd?: string | undefined;
+  workTogetherWorkCwdRoot?: string | undefined;
 }
 
 export interface AcpSkillRoot {
@@ -77,6 +80,8 @@ export interface AcpSessionParams {
   permissionCli?: AcpBridgePermissionCli;
   permissionMode: "accept-edits" | "full";
   deliveryAuthority: DeliveryAuthority;
+  executionEnvironmentCwd?: string;
+  workTogetherWorkCwdRoot?: string;
   workspaceWriteRoots: string[];
   envVars?: Record<string, string>;
   instructions?: string;
@@ -310,7 +315,19 @@ export function buildAcpSessionParams(
 ): AcpSessionParams {
   const { options, launchSpec } = args;
   const instructions = buildAcpSessionInstructions(options);
-  const cwd = launchSpec.cwd ?? args.cwd;
+  if (
+    options.deliveryAuthority === "none" &&
+    (options.executionCwd === undefined ||
+      options.executionEnvironmentCwd === undefined ||
+      options.executionCwd !== args.cwd ||
+      (launchSpec.cwd !== undefined && launchSpec.cwd !== options.executionCwd))
+  ) {
+    throw new Error("Work Together execution cwd is invalid");
+  }
+  const cwd =
+    options.deliveryAuthority === "none"
+      ? options.executionCwd!
+      : (launchSpec.cwd ?? args.cwd);
   const envVars = {
     ...launchSpec.env,
     ...(options.envVars ?? {}),
@@ -350,7 +367,18 @@ export function buildAcpSessionParams(
       : {}),
     permissionMode: options.permissionMode,
     deliveryAuthority: options.deliveryAuthority,
-    workspaceWriteRoots: [cwd, ...args.additionalWorkspaceWriteRoots],
+    ...(options.deliveryAuthority === "none"
+      ? {
+          executionEnvironmentCwd: options.executionEnvironmentCwd,
+          ...(options.workTogetherWorkCwdRoot === undefined
+            ? {}
+            : { workTogetherWorkCwdRoot: options.workTogetherWorkCwdRoot }),
+        }
+      : {}),
+    workspaceWriteRoots:
+      options.deliveryAuthority === "none"
+        ? [cwd]
+        : [cwd, ...args.additionalWorkspaceWriteRoots],
     ...(Object.keys(envVars).length > 0 ? { envVars } : {}),
     ...(instructions ? { instructions } : {}),
     ...(args.dynamicTools && args.dynamicTools.length > 0

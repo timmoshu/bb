@@ -325,10 +325,13 @@ function createProvisionWorkspaceMock(path: string) {
 describe("RuntimeManager", () => {
   it("creates a runtime the first time an environment is requested", async () => {
     const provisionWorkspace = createProvisionWorkspaceMock("/tmp/env-1");
-    const createRuntime = vi.fn(() => createFakeRuntime());
+    const createRuntime = vi.fn<
+      (options: AgentRuntimeOptions) => AgentRuntime
+    >(() => createFakeRuntime());
     const manager = new RuntimeManager({
       provisionWorkspace,
       createRuntime,
+      workTogetherWorkCwdRoot: "/tmp/work-cwds",
     });
 
     const entry = await manager.ensureEnvironment({
@@ -338,6 +341,9 @@ describe("RuntimeManager", () => {
 
     expect(provisionWorkspace).toHaveBeenCalledTimes(1);
     expect(createRuntime).toHaveBeenCalledTimes(1);
+    expect(createRuntime.mock.calls[0]?.[0].workTogetherWorkCwdRoot).toBe(
+      "/tmp/work-cwds",
+    );
     expect(entry.path).toBe("/tmp/env-1");
   });
 
