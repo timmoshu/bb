@@ -23,9 +23,11 @@ import {
 import {
   handleWtCheckpointReportToolCall,
   handleWtNeedsYouReportToolCall,
+  handleWtRepositoryDeliverToolCall,
   handleWtResultReportToolCall,
   WT_CHECKPOINT_REPORT_TOOL_NAME,
   WT_NEEDS_YOU_REPORT_TOOL_NAME,
+  WT_REPOSITORY_DELIVER_TOOL_NAME,
   WT_RESULT_REPORT_TOOL_NAME,
 } from "../services/work-together-settlement-tools.js";
 import { requireAuthenticatedDaemonSession } from "./session-state.js";
@@ -121,6 +123,17 @@ export function registerInternalToolCallRoutes(app: Hono, deps: AppDeps): void {
         return context.json(
           await handleWtNeedsYouReportToolCall({
             threadId: thread.id,
+            input: payload.arguments,
+          }),
+        );
+      }
+
+      if (payload.tool === WT_REPOSITORY_DELIVER_TOOL_NAME) {
+        return context.json(
+          await handleWtRepositoryDeliverToolCall({
+            projectId: thread.projectId,
+            threadId: thread.id,
+            turnId: payload.turnId,
             input: payload.arguments,
           }),
         );

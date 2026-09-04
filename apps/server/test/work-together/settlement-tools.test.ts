@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { copyWorkTogetherThreadContext } from "@bb/db";
 import {
   handleWtCheckpointReportToolCall,
   handleWtNeedsYouReportToolCall,
+  handleWtRepositoryDeliverToolCall,
   handleWtResultReportToolCall,
   WT_CHECKPOINT_REPORT_TOOL,
   WT_CHECKPOINT_REPORT_TOOL_NAME,
   WT_NEEDS_YOU_REPORT_TOOL,
   WT_NEEDS_YOU_REPORT_TOOL_NAME,
+  WT_REPOSITORY_DELIVER_TOOL,
+  WT_REPOSITORY_DELIVER_TOOL_NAME,
   WT_RESULT_REPORT_TOOL,
   WT_RESULT_REPORT_TOOL_NAME,
   workTogetherSettlementToolsForThread,
@@ -37,9 +41,11 @@ describe("work-together settlement ACP tools", () => {
     expect(WT_CHECKPOINT_REPORT_TOOL.name).toBe(WT_CHECKPOINT_REPORT_TOOL_NAME);
     expect(WT_RESULT_REPORT_TOOL.name).toBe(WT_RESULT_REPORT_TOOL_NAME);
     expect(WT_NEEDS_YOU_REPORT_TOOL.name).toBe(WT_NEEDS_YOU_REPORT_TOOL_NAME);
+    expect(WT_REPOSITORY_DELIVER_TOOL.name).toBe(WT_REPOSITORY_DELIVER_TOOL_NAME);
     assertDescriptorClean(JSON.stringify(WT_CHECKPOINT_REPORT_TOOL));
     assertDescriptorClean(JSON.stringify(WT_RESULT_REPORT_TOOL));
     assertDescriptorClean(JSON.stringify(WT_NEEDS_YOU_REPORT_TOOL));
+    assertDescriptorClean(JSON.stringify(WT_REPOSITORY_DELIVER_TOOL));
     expect(WT_NEEDS_YOU_REPORT_TOOL.description).toContain("does not finish Work");
 
     await withTestHarness(
@@ -82,6 +88,7 @@ describe("work-together settlement ACP tools", () => {
           WT_CHECKPOINT_REPORT_TOOL_NAME,
           WT_RESULT_REPORT_TOOL_NAME,
           WT_NEEDS_YOU_REPORT_TOOL_NAME,
+          WT_REPOSITORY_DELIVER_TOOL_NAME,
         ]);
 
         const ordinary = seedThread(harness.deps, {
@@ -91,6 +98,25 @@ describe("work-together settlement ACP tools", () => {
         expect(
           workTogetherSettlementToolsForThread(harness.deps.db, ordinary.id),
         ).toEqual([]);
+        const fork = seedThread(harness.deps, {
+          projectId: project.id,
+          environmentId: environment.id,
+          originKind: "fork",
+          sourceThreadId: threadId,
+        });
+        copyWorkTogetherThreadContext(harness.deps.db, {
+          sourceThreadId: threadId,
+          targetThreadId: fork.id,
+        });
+        expect(
+          workTogetherSettlementToolsForThread(harness.deps.db, fork.id).map(
+            (tool) => tool.name,
+          ),
+        ).toEqual([
+          WT_CHECKPOINT_REPORT_TOOL_NAME,
+          WT_RESULT_REPORT_TOOL_NAME,
+          WT_NEEDS_YOU_REPORT_TOOL_NAME,
+        ]);
       },
     );
   });
@@ -221,6 +247,26 @@ describe("work-together settlement ACP tools", () => {
         expect(
           new Headers(posts[2]?.headers as HeadersInit).get("authorization"),
         ).toBe(`Bearer ${CELL_TOKEN}`);
+
+        const delivered = await handleWtRepositoryDeliverToolCall({
+          projectId: project.id,
+          threadId,
+          turnId: "turn-1",
+          input: undefined,
+        });
+        expect(delivered.success).toBe(true);
+        expect(posts[3]?.url).toBe(
+          "http://127.0.0.1:9/cell-tools/v1/repository/deliver",
+        );
+        expect(posts[3]?.body).toEqual({
+          idempotencyKey: `repository-deliver:${threadId}:turn-1`,
+        });
+        const deliveryHeaders = new Headers(posts[3]?.headers as HeadersInit);
+        expect(deliveryHeaders.get("x-bb-project-id")).toBe(project.id);
+        expect(deliveryHeaders.get("x-bb-thread-id")).toBe(threadId);
+        expect(JSON.stringify(posts[3]?.body)).not.toContain("workId");
+        expect(JSON.stringify(posts[3]?.body)).not.toContain("remote");
+        expect(JSON.stringify(posts[3]?.body)).not.toContain("token");
       },
     );
   });

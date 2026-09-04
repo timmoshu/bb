@@ -34,7 +34,8 @@ import { resolveWorkspaceProjectSkills } from "../skills/workspace-skills.js";
 import { resolveSharedSkills } from "../skills/shared-skills.js";
 import { UPDATE_ENVIRONMENT_DIRECTORY_TOOL } from "./thread-environment-directory.js";
 import { workTogetherFilespaceToolForThread } from "../work-together-filespace-tool.js";
-import { workTogetherSettlementToolsForThread, WT_CHECKPOINT_REPORT_TOOL_NAME, WT_NEEDS_YOU_REPORT_TOOL_NAME, WT_RESULT_REPORT_TOOL_NAME } from "../work-together-settlement-tools.js";
+import { workTogetherSettlementToolsForThread, WT_CHECKPOINT_REPORT_TOOL_NAME, WT_NEEDS_YOU_REPORT_TOOL_NAME,
+ WT_REPOSITORY_DELIVER_TOOL_NAME, WT_RESULT_REPORT_TOOL_NAME } from "../work-together-settlement-tools.js";
 import {
   DATA_DIR_AGENT_INSTRUCTIONS_RELATIVE_PATH,
   WORKSPACE_AGENT_INSTRUCTIONS_RELATIVE_PATH,
@@ -263,7 +264,9 @@ export async function resolveThreadRuntimeCommandConfig(
             ? "When you have a Primary synthesis, call `wt_result_report`. This is the result for a human; it does not finish Work or mark a Goal met. Do not invent HTTP, tokens, actor, or goal ids."
             : tool.name === WT_NEEDS_YOU_REPORT_TOOL_NAME
               ? "When only a human decision or input can progress this Work, call `wt_needs_you_report` once and stop. Do not keep looping checkpoint or result. This does not finish Work or mark a Goal met. Do not invent HTTP, tokens, actor, or goal ids."
-              : "",
+              : tool.name === WT_REPOSITORY_DELIVER_TOOL_NAME
+                ? "After tests and a clean local commit, call `wt_repository_deliver` to publish only the Start-authorized generated branch. Never merge, write default, release, or deploy."
+                : "",
       pluginId: null,
     });
   }

@@ -1,4 +1,4 @@
-import { getWorkTogetherThreadContext } from "@bb/db";
+import { getThread, getWorkTogetherThreadContext } from "@bb/db";
 import type { DbQueryConnection } from "@bb/db";
 import type { DynamicTool, ToolCallResponse } from "@bb/domain";
 import { z } from "zod";
@@ -7,6 +7,7 @@ import { getWorkTogetherCellTools } from "./work-together-filespace-tool.js";
 export const WT_CHECKPOINT_REPORT_TOOL_NAME = "wt_checkpoint_report";
 export const WT_RESULT_REPORT_TOOL_NAME = "wt_result_report";
 export const WT_NEEDS_YOU_REPORT_TOOL_NAME = "wt_needs_you_report";
+export const WT_REPOSITORY_DELIVER_TOOL_NAME = "wt_repository_deliver";
 
 const checkpointInputSchema = z
   .object({
@@ -28,6 +29,26 @@ const needsYouInputSchema = z
     question: z.string().min(1).max(4000),
   })
   .strict();
+
+const repositoryDeliverInputSchema = z
+  .object({ idempotencyKey: z.string().min(1).max(200).optional() })
+  .strict();
+
+export const WT_REPOSITORY_DELIVER_TOOL: DynamicTool = {
+  name: WT_REPOSITORY_DELIVER_TOOL_NAME,
+  description:
+    "Publish the current clean local commit to the Start-authorized WT-generated branch after tests. Never merge, write the default branch, create a release, or deploy.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      idempotencyKey: {
+        type: "string",
+        description: "Optional replay key. Omit to use the current BB turn identity.",
+      },
+    },
+    additionalProperties: false,
+  },
+};
 
 export const WT_CHECKPOINT_REPORT_TOOL: DynamicTool = {
   name: WT_CHECKPOINT_REPORT_TOOL_NAME,
@@ -128,7 +149,15 @@ export function workTogetherSettlementToolsForThread(
 ): DynamicTool[] {
   if (!getWorkTogetherCellTools()) return [];
   if (!getWorkTogetherThreadContext(db, threadId)) return [];
-  return [WT_CHECKPOINT_REPORT_TOOL, WT_RESULT_REPORT_TOOL, WT_NEEDS_YOU_REPORT_TOOL];
+  const tools = [
+    WT_CHECKPOINT_REPORT_TOOL,
+    WT_RESULT_REPORT_TOOL,
+    WT_NEEDS_YOU_REPORT_TOOL,
+  ];
+  if (getThread(db, threadId)?.originKind === null) {
+    tools.push(WT_REPOSITORY_DELIVER_TOOL);
+  }
+  return tools;
 }
 
 function textResponse(success: boolean, text: string): ToolCallResponse {
@@ -224,4 +253,44 @@ export async function handleWtNeedsYouReportToolCall(args: {
     parsed.data,
     "Needs-you report failed",
   );
+}
+
+export async function handleWtRepositoryDeliverToolCall(args: {
+  projectId: string;
+  threadId: string;
+  turnId: string;
+  input: unknown;
+}): Promise<ToolCallResponse> {
+  const parsed = repositoryDeliverInputSchema.safeParse(args.input ?? {});
+  if (!parsed.success) return textResponse(false, "Invalid repository delivery input");
+  const cellTools = getWorkTogetherCellTools();
+  if (!cellTools) return textResponse(false, "Work Together cell tools are not configured");
+  const idempotencyKey =
+    parsed.data.idempotencyKey ?? `repository-deliver:${args.threadId}:${args.turnId}`;
+  try {
+    const response = await (cellTools.fetch ?? fetch)(
+      `${cellTools.baseUrl.replace(/\/$/u, "")}/cell-tools/v1/repository/deliver`,
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer " + cellTools.token,
+          "content-type": "application/json",
+          "x-bb-project-id": args.projectId,
+          "x-bb-thread-id": args.threadId,
+        },
+        body: JSON.stringify({ idempotencyKey }),
+      },
+    );
+    const payload = await response.json().catch(() => undefined);
+    if (!response.ok || payload === undefined) {
+      const code =
+        payload && typeof payload === "object" && "error" in payload
+          ? String(payload.error)
+          : "repository_delivery_unavailable";
+      return textResponse(false, `Repository delivery failed: ${code}`);
+    }
+    return textResponse(true, JSON.stringify(payload));
+  } catch {
+    return textResponse(false, "Repository delivery failed: repository_delivery_unavailable");
+  }
 }
