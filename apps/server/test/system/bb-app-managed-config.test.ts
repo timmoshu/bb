@@ -77,6 +77,8 @@ function createRuntimeConfig(): ServerRuntimeConfig {
     serverPort: 38886,
     sharedSkillRoots: { user: [], project: [] },
     transcriptionModel: "openai/gpt-4o-transcribe",
+    workTogetherCoordinationProviderId: "acp-grok",
+    workTogetherCoordinationModel: "grok-4.6",
   };
 }
 

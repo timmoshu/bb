@@ -87,6 +87,9 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
     serverPort: serverConfig.BB_SERVER_PORT,
     sharedSkillRoots: { user: [], project: [] },
     transcriptionModel: serverConfig.BB_TRANSCRIPTION,
+    workTogetherCoordinationProviderId:
+      serverConfig.BB_WT_COORDINATION_PROVIDER_ID,
+    workTogetherCoordinationModel: serverConfig.BB_WT_COORDINATION_MODEL,
   };
 
   const providerRegistry = createProviderRegistryService({

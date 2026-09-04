@@ -19,6 +19,18 @@ const MIN_TOKEN_LENGTH = 32;
 const MAX_BINDING_KEY_LENGTH = 500;
 const COORDINATION_THREAD_ID_NAMESPACE = "bb.work-together.coordination-thread";
 
+export function workTogetherCoordinationExecution(
+  config: Pick<
+    ServerAppDeps["config"],
+    "workTogetherCoordinationProviderId" | "workTogetherCoordinationModel"
+  >,
+) {
+  return {
+    providerId: config.workTogetherCoordinationProviderId,
+    model: config.workTogetherCoordinationModel,
+  };
+}
+
 const coordinationThreadBodySchema = z
   .object({
     projectId: z.string().min(1).max(200),
@@ -203,6 +215,25 @@ export function registerWorkTogetherCoordinationRoutes(
           200,
         );
       }
+      const coordinationExecution = workTogetherCoordinationExecution(
+        deps.config,
+      );
+      await deps.providerRegistry.whenProviderRegistered(
+        coordinationExecution.providerId,
+      );
+      const coordinationProvider = deps.providerRegistry.get(
+        coordinationExecution.providerId,
+      );
+      if (
+        coordinationProvider === null ||
+        !coordinationProvider.info.available
+      ) {
+        throw new ApiError(
+          409,
+          "coordination_provider_unavailable",
+          "Coordination provider unavailable",
+        );
+      }
       let thread;
       try {
         thread = await createThreadFromRequest(
@@ -213,10 +244,10 @@ export function registerWorkTogetherCoordinationRoutes(
               environmentId: parsed.data.environmentId,
             },
             input: [],
-            model: "grok-4.6",
+            model: coordinationExecution.model,
             origin: "sdk",
             projectId: parsed.data.projectId,
-            providerId: "acp-grok",
+            providerId: coordinationExecution.providerId,
             startedOnBehalfOf: null,
             title: parsed.data.title,
           },

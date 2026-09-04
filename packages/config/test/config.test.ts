@@ -307,6 +307,8 @@ describe("consumer-specific config", () => {
     expect(serverConfig.BB_INFERENCE).toBe("codex/gpt-5.6-luna");
     expect(serverConfig.BB_INFERENCE_FALLBACK).toBe("codex/gpt-5.4-mini");
     expect(serverConfig.BB_TRANSCRIPTION).toBe("codex/gpt-transcribe");
+    expect(serverConfig.BB_WT_COORDINATION_PROVIDER_ID).toBe("acp-grok");
+    expect(serverConfig.BB_WT_COORDINATION_MODEL).toBe("grok-4.6");
     expect(serverConfig.OPENAI_API_KEY).toBe("test-openai-key");
     expect(serverConfig.featureFlags).toEqual({
       placeholder: false,
@@ -360,6 +362,33 @@ describe("consumer-specific config", () => {
         },
       }).BB_WT_WORK_CWD_ROOT,
     ).toBe(root);
+  });
+
+  it("requires the Work Together coordination provider and model as a bounded pair", () => {
+    const configured = loadServerConfig({
+      env: createServerRuntimeEnv({
+        BB_WT_COORDINATION_PROVIDER_ID: "codex",
+        BB_WT_COORDINATION_MODEL: "gpt-5.6-sol",
+      }),
+    });
+    expect(configured.BB_WT_COORDINATION_PROVIDER_ID).toBe("codex");
+    expect(configured.BB_WT_COORDINATION_MODEL).toBe("gpt-5.6-sol");
+    for (const env of [
+      { BB_WT_COORDINATION_PROVIDER_ID: "codex" },
+      { BB_WT_COORDINATION_MODEL: "gpt-5.6-sol" },
+      {
+        BB_WT_COORDINATION_PROVIDER_ID: " ",
+        BB_WT_COORDINATION_MODEL: "gpt-5.6-sol",
+      },
+      {
+        BB_WT_COORDINATION_PROVIDER_ID: "codex",
+        BB_WT_COORDINATION_MODEL: "x".repeat(501),
+      },
+    ]) {
+      expect(() =>
+        loadServerConfig({ env: createServerRuntimeEnv(env) }),
+      ).toThrow(/BB_WT_COORDINATION/u);
+    }
   });
 
   it("defaults the server bind host to loopback", () => {

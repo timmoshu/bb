@@ -68,6 +68,17 @@ function parseOptionalTrimmedStringEnvValue(
   return trimmedValue.length === 0 ? undefined : trimmedValue;
 }
 
+function parseOptionalBoundedString(maxLength: number) {
+  return (args: EnvVarParseArgs): string | undefined => {
+    const value = args.value.trim();
+    if (value.length === 0) throw new Error(`${args.name} must not be empty`);
+    if (value.length > maxLength) {
+      throw new Error(`${args.name} must be at most ${maxLength} characters`);
+    }
+    return value;
+  };
+}
+
 function parseStringEnvValue(args: EnvVarParseArgs): string {
   return args.value;
 }
@@ -211,6 +222,21 @@ export const BB_WT_WORK_CWD_ROOT_ENV = defineEnvVar<string | undefined>({
     "Canonical host root containing Work Together managed per-Work execution directories.",
   name: "BB_WT_WORK_CWD_ROOT",
   parse: parseOptionalTrimmedStringEnvValue,
+});
+
+export const BB_WT_COORDINATION_PROVIDER_ID_ENV = defineEnvVar<
+  string | undefined
+>({
+  description:
+    "Server-owned provider for new Work Together coordination threads.",
+  name: "BB_WT_COORDINATION_PROVIDER_ID",
+  parse: parseOptionalBoundedString(200),
+});
+
+export const BB_WT_COORDINATION_MODEL_ENV = defineEnvVar<string | undefined>({
+  description: "Server-owned model for new Work Together coordination threads.",
+  name: "BB_WT_COORDINATION_MODEL",
+  parse: parseOptionalBoundedString(500),
 });
 
 export const BB_APP_SURFACE_ENV = defineEnvVar<AppSurface>({

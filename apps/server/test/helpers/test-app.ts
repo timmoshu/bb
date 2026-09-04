@@ -210,6 +210,8 @@ export async function createTestAppHarness(
     serverPort: 3334,
     sharedSkillRoots: { user: [], project: [] },
     transcriptionModel: "test/mock-transcription",
+    workTogetherCoordinationProviderId: "acp-grok",
+    workTogetherCoordinationModel: "grok-4.6",
     appUrl: "https://bb.example.test",
     ...configOverrides,
   };

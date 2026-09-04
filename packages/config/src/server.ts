@@ -27,6 +27,8 @@ import {
   BB_TELEMETRY_ENV,
   BB_TRANSCRIPTION_ENV,
   BB_WORK_TOGETHER_INTEGRATION_TOKEN_ENV,
+  BB_WT_COORDINATION_MODEL_ENV,
+  BB_WT_COORDINATION_PROVIDER_ID_ENV,
   DEFAULT_BB_APP_URL,
   DEFAULT_BB_APP_SURFACE,
   DEFAULT_BB_APP_VERSION,
@@ -66,6 +68,8 @@ export interface ServerConfig
   BB_TELEMETRY: boolean;
   BB_TRANSCRIPTION: string;
   BB_WORK_TOGETHER_INTEGRATION_TOKEN?: string;
+  BB_WT_COORDINATION_PROVIDER_ID: string;
+  BB_WT_COORDINATION_MODEL: string;
   OPENAI_API_KEY: string;
   featureFlags: FeatureFlags;
 }
@@ -103,6 +107,24 @@ export function loadServerConfig(
     homeDir: loader.context.homeDir,
     mode: loader.mode,
   });
+  const coordinationProviderId = readOptionalEnvVar({
+    context: loader.context,
+    definition: BB_WT_COORDINATION_PROVIDER_ID_ENV,
+    env: loader.env,
+  });
+  const coordinationModel = readOptionalEnvVar({
+    context: loader.context,
+    definition: BB_WT_COORDINATION_MODEL_ENV,
+    env: loader.env,
+  });
+  if (
+    (coordinationProviderId === undefined) !==
+    (coordinationModel === undefined)
+  ) {
+    throw new Error(
+      "BB_WT_COORDINATION_PROVIDER_ID and BB_WT_COORDINATION_MODEL must be set together",
+    );
+  }
   const config: ServerConfig = {
     ...commonConfig,
     ...databaseConfig,
@@ -185,6 +207,8 @@ export function loadServerConfig(
       definition: BB_TRANSCRIPTION_ENV,
       env: loader.env,
     }),
+    BB_WT_COORDINATION_PROVIDER_ID: coordinationProviderId ?? "acp-grok",
+    BB_WT_COORDINATION_MODEL: coordinationModel ?? "grok-4.6",
     OPENAI_API_KEY: readEnvVarWithDefault({
       context: loader.context,
       defaultValue: DEFAULT_OPENAI_API_KEY,

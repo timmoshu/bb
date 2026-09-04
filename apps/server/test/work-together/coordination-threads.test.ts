@@ -9,7 +9,10 @@ import {
 } from "@bb/db";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../src/server.js";
-import { coordinationThreadIdForBindingKey } from "../../src/routes/work-together-coordination.js";
+import {
+  coordinationThreadIdForBindingKey,
+  workTogetherCoordinationExecution,
+} from "../../src/routes/work-together-coordination.js";
 import { listQueuedThreadCommands } from "../helpers/commands.js";
 import {
   seedEnvironment,
@@ -178,11 +181,14 @@ describe("work-together coordination thread route", () => {
           ),
         ).toBe(false);
         expect(
-          listStoredThreadPromptHistoryRows(harness.db, { threadId, limit: 20 }),
+          listStoredThreadPromptHistoryRows(harness.db, {
+            threadId,
+            limit: 20,
+          }),
         ).toHaveLength(0);
-        expect(listQueuedThreadCommands(harness, "thread.start", threadId)).toHaveLength(
-          0,
-        );
+        expect(
+          listQueuedThreadCommands(harness, "thread.start", threadId),
+        ).toHaveLength(0);
 
         const retry = await put("Goal A retitled");
         expect(retry.status).toBe(200);
@@ -193,23 +199,30 @@ describe("work-together coordination thread route", () => {
         expect(retryBody.created).toBe(false);
         expect(retryBody.thread.id).toBe(threadId);
         expect(getThread(harness.db, threadId)?.providerId).toBe("acp-grok");
-        expect(listThreads(harness.db, { projectId: project.id })).toHaveLength(1);
+        expect(listThreads(harness.db, { projectId: project.id })).toHaveLength(
+          1,
+        );
         expect(getThread(harness.db, threadId)?.updatedAt).toBe(idle.updatedAt);
 
-        const sent = await harness.app.request(`/api/v1/threads/${threadId}/send`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            input: [{ type: "text", text: "First later message" }],
-            mode: "start",
-            model: "gpt-5",
-          }),
-        });
-        expect(sent.status).toBe(409);
-        expect(((await sent.json()) as { code?: string }).code).toBe("context_not_applied");
-        expect(listQueuedThreadCommands(harness, "thread.start", threadId)).toHaveLength(
-          0,
+        const sent = await harness.app.request(
+          `/api/v1/threads/${threadId}/send`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              input: [{ type: "text", text: "First later message" }],
+              mode: "start",
+              model: "gpt-5",
+            }),
+          },
         );
+        expect(sent.status).toBe(409);
+        expect(((await sent.json()) as { code?: string }).code).toBe(
+          "context_not_applied",
+        );
+        expect(
+          listQueuedThreadCommands(harness, "thread.start", threadId),
+        ).toHaveLength(0);
 
         const concurrentPath =
           "/api/work-together/v1/coordination-threads/goal-concurrent";
@@ -234,7 +247,10 @@ describe("work-together coordination thread route", () => {
             body: concurrentBody,
           }),
         ]);
-        const concurrentStatuses = [firstConcurrent.status, secondConcurrent.status].sort();
+        const concurrentStatuses = [
+          firstConcurrent.status,
+          secondConcurrent.status,
+        ].sort();
         expect(concurrentStatuses).toEqual([200, 201]);
         const concurrentBodies = [
           (await firstConcurrent.json()) as {
@@ -246,7 +262,9 @@ describe("work-together coordination thread route", () => {
             thread: { id: string };
           },
         ];
-        expect(new Set(concurrentBodies.map((body) => body.thread.id)).size).toBe(1);
+        expect(
+          new Set(concurrentBodies.map((body) => body.thread.id)).size,
+        ).toBe(1);
         const concurrentId = concurrentBodies[0]!.thread.id;
         expect(concurrentId).not.toBe(threadId);
         expect(concurrentBodies.filter((body) => body.created)).toHaveLength(1);
@@ -260,9 +278,107 @@ describe("work-together coordination thread route", () => {
             (event) => event.type === "client/turn/requested",
           ),
         ).toBe(false);
-        expect(listQueuedThreadCommands(harness, "thread.start", concurrentId)).toHaveLength(
-          0,
+        expect(
+          listQueuedThreadCommands(harness, "thread.start", concurrentId),
+        ).toHaveLength(0);
+      },
+    );
+  });
+
+  it("uses configured provider/model for new threads and never retargets replay", async () => {
+    await withTestHarness(
+      {
+        workTogetherIntegrationToken: TOKEN,
+        workTogetherCoordinationProviderId: "codex",
+        workTogetherCoordinationModel: "gpt-5.6-sol",
+      },
+      async (harness) => {
+        expect(workTogetherCoordinationExecution(harness.config)).toEqual({
+          providerId: "codex",
+          model: "gpt-5.6-sol",
+        });
+        const { host } = seedHostSession(harness.deps, {
+          id: "host-wt-provider",
+        });
+        const { project } = seedProjectWithSource(harness.deps, {
+          hostId: host.id,
+          path: "/tmp/wt-provider",
+        });
+        const environment = seedEnvironment(harness.deps, {
+          hostId: host.id,
+          projectId: project.id,
+          path: "/tmp/wt-provider",
+        });
+        const request = () =>
+          harness.app.request(
+            "/api/work-together/v1/coordination-threads/provider-config",
+            {
+              method: "PUT",
+              headers: {
+                authorization: `Bearer ${TOKEN}`,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({
+                projectId: project.id,
+                environmentId: environment.id,
+                title: "Provider config",
+              }),
+            },
+          );
+        const created = await request();
+        expect(created.status).toBe(201);
+        const id = ((await created.json()) as { thread: { id: string } }).thread
+          .id;
+        expect(getThread(harness.db, id)?.providerId).toBe("codex");
+        harness.config.workTogetherCoordinationProviderId = "acp-grok";
+        harness.config.workTogetherCoordinationModel = "grok-4.6";
+        expect((await request()).status).toBe(200);
+        expect(getThread(harness.db, id)?.providerId).toBe("codex");
+        expect(getThread(harness.db, id)?.modelOverride).toBeNull();
+      },
+    );
+  });
+
+  it("fails safely when the configured provider is unavailable", async () => {
+    await withTestHarness(
+      {
+        workTogetherIntegrationToken: TOKEN,
+        workTogetherCoordinationProviderId: "missing-provider",
+        workTogetherCoordinationModel: "model-x",
+      },
+      async (harness) => {
+        const { host } = seedHostSession(harness.deps, {
+          id: "host-wt-missing-provider",
+        });
+        const { project } = seedProjectWithSource(harness.deps, {
+          hostId: host.id,
+          path: "/tmp/wt-missing-provider",
+        });
+        const environment = seedEnvironment(harness.deps, {
+          hostId: host.id,
+          projectId: project.id,
+          path: "/tmp/wt-missing-provider",
+        });
+        const response = await harness.app.request(
+          "/api/work-together/v1/coordination-threads/missing-provider",
+          {
+            method: "PUT",
+            headers: {
+              authorization: `Bearer ${TOKEN}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              projectId: project.id,
+              environmentId: environment.id,
+              title: "Unavailable provider",
+            }),
+          },
         );
+        expect(response.status).toBe(409);
+        expect((await response.json()) as unknown).toEqual({
+          code: "coordination_provider_unavailable",
+          message: "Coordination provider unavailable",
+        });
       },
     );
   });
@@ -298,7 +414,11 @@ describe("work-together coordination thread route", () => {
           projectId: project.id,
           path: "/tmp/wt-coordination-sibling",
         });
-        const put = (bindingKey: string, projectId: string, environmentId: string) =>
+        const put = (
+          bindingKey: string,
+          projectId: string,
+          environmentId: string,
+        ) =>
           harness.app.request(
             `/api/work-together/v1/coordination-threads/${bindingKey}`,
             {
@@ -317,7 +437,8 @@ describe("work-together coordination thread route", () => {
 
         const created = await put("bind-project", project.id, environment.id);
         expect(created.status).toBe(201);
-        const createdId = ((await created.json()) as { thread: { id: string } }).thread.id;
+        const createdId = ((await created.json()) as { thread: { id: string } })
+          .thread.id;
         const beforeProject = getThread(harness.db, createdId);
         const otherProjectConflict = await put(
           "bind-project",
@@ -325,26 +446,40 @@ describe("work-together coordination thread route", () => {
           otherEnvironment.id,
         );
         expect(otherProjectConflict.status).toBe(409);
-        expect(((await otherProjectConflict.json()) as { code?: string }).code).toBe(
-          "coordination_binding_conflict",
-        );
+        expect(
+          ((await otherProjectConflict.json()) as { code?: string }).code,
+        ).toBe("coordination_binding_conflict");
         expect(getThread(harness.db, createdId)).toEqual(beforeProject);
 
         const envCreated = await put("bind-env", project.id, environment.id);
         expect(envCreated.status).toBe(201);
-        const envId = ((await envCreated.json()) as { thread: { id: string } }).thread.id;
+        const envId = ((await envCreated.json()) as { thread: { id: string } })
+          .thread.id;
         const beforeEnv = getThread(harness.db, envId);
-        const envConflict = await put("bind-env", project.id, siblingEnvironment.id);
+        const envConflict = await put(
+          "bind-env",
+          project.id,
+          siblingEnvironment.id,
+        );
         expect(envConflict.status).toBe(409);
         expect(getThread(harness.db, envId)).toEqual(beforeEnv);
 
-        const deletedCreated = await put("bind-deleted", project.id, environment.id);
+        const deletedCreated = await put(
+          "bind-deleted",
+          project.id,
+          environment.id,
+        );
         expect(deletedCreated.status).toBe(201);
-        const deletedId = ((await deletedCreated.json()) as { thread: { id: string } })
-          .thread.id;
+        const deletedId = (
+          (await deletedCreated.json()) as { thread: { id: string } }
+        ).thread.id;
         markThreadDeleted(harness.db, harness.hub, { threadId: deletedId });
         const beforeDeleted = getThread(harness.db, deletedId);
-        const deletedConflict = await put("bind-deleted", project.id, environment.id);
+        const deletedConflict = await put(
+          "bind-deleted",
+          project.id,
+          environment.id,
+        );
         expect(deletedConflict.status).toBe(409);
         expect(getThread(harness.db, deletedId)).toEqual(beforeDeleted);
         expect(
@@ -369,7 +504,11 @@ describe("work-together coordination thread route", () => {
           status: "idle",
         });
         const beforeSource = getThread(harness.db, sourceId);
-        const sourceConflict = await put("bind-source", project.id, environment.id);
+        const sourceConflict = await put(
+          "bind-source",
+          project.id,
+          environment.id,
+        );
         expect(sourceConflict.status).toBe(409);
         expect(getThread(harness.db, sourceId)).toEqual(beforeSource);
 
@@ -388,7 +527,11 @@ describe("work-together coordination thread route", () => {
           status: "idle",
         });
         const beforeChild = getThread(harness.db, childId);
-        const childConflict = await put("bind-child", project.id, environment.id);
+        const childConflict = await put(
+          "bind-child",
+          project.id,
+          environment.id,
+        );
         expect(childConflict.status).toBe(409);
         expect(getThread(harness.db, childId)).toEqual(beforeChild);
       },
