@@ -41,6 +41,7 @@ export async function probeAcpAgent(
       args: [...request.args],
       cwd: request.cwd,
       env: withoutBridgeRuntimeEnv({ ...process.env, ...(request.env ?? {}) }),
+      deliveryAuthority: "git",
       recordThreadId: null,
       onNotification: () => {},
       onRequest: (_method, _params, responder) => {

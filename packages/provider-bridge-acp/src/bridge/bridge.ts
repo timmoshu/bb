@@ -790,6 +790,7 @@ async function loadSessionDiscoveredModels(
     args: agent.args,
     cwd: agent.cwd ?? process.cwd(),
     env: childEnv,
+    deliveryAuthority: "git",
     recordThreadId: null,
     onNotification: () => {},
     onRequest: (_method, _params, responder) => {
@@ -1668,6 +1669,7 @@ async function startAgentSession(
     args: launch.args,
     cwd: params.cwd,
     env: childEnv,
+    deliveryAuthority: params.deliveryAuthority,
     recordThreadId: bbThreadId,
     onNotification: (method, notificationParams) =>
       handleAgentNotification(session, method, notificationParams),

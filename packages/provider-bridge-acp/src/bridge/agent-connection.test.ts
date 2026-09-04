@@ -87,6 +87,7 @@ describe("ACP agent stdio lifecycle", () => {
       ],
       cwd: process.cwd(),
       env: process.env,
+      deliveryAuthority: "git",
       onNotification(method) {
         if (method === "ready") ready.resolve();
       },
@@ -121,6 +122,7 @@ describe("ACP agent stdio lifecycle", () => {
       ],
       cwd: process.cwd(),
       env: process.env,
+      deliveryAuthority: "git",
       onNotification(method) {
         if (method === "ready") ready.resolve();
       },
@@ -180,6 +182,7 @@ describe("ACP agent stdio lifecycle", () => {
       ],
       cwd: process.cwd(),
       env: process.env,
+      deliveryAuthority: "git",
       onNotification(method) {
         if (method === "ready") ready.resolve();
       },
@@ -253,6 +256,7 @@ describe("ACP agent stdio lifecycle", () => {
       ],
       cwd: workspace,
       env: process.env,
+      deliveryAuthority: "git",
       onNotification(method) {
         if (method === "ready") ready.resolve();
       },
@@ -283,6 +287,7 @@ describe("ACP agent stdio lifecycle", () => {
       args: ["-e", "setTimeout(() => process.exit(7), 20)"],
       cwd: process.cwd(),
       env: process.env,
+      deliveryAuthority: "git",
       onNotification() {},
       onRequest() {},
       onExit: exited.resolve,

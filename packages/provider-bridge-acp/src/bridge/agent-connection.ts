@@ -1,7 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
+import type { DeliveryAuthority } from "@bb/domain";
 import { experimental_recordProviderChildIo } from "@bb/provider-bridge-protocol/bridge-kit";
 import type { z } from "zod";
+import { planAcpAgentLaunch } from "../sandbox-launch.js";
 
 const STDERR_TAIL_MAX_CHUNKS = 40;
 const CLOSED_STDIN_ERROR_CODES = new Set(["EPIPE", "ERR_STREAM_DESTROYED"]);
@@ -22,6 +24,7 @@ interface CreateAcpAgentConnectionOptions {
   args: string[];
   cwd: string;
   env: Record<string, string | undefined>;
+  deliveryAuthority: DeliveryAuthority;
   recordThreadId: string | null;
   onNotification(method: string, params: unknown): void;
   onRequest(
@@ -138,9 +141,16 @@ function parseAgentLine(line: string): ParsedAgentMessage | null {
 export function createAcpAgentConnection(
   options: CreateAcpAgentConnectionOptions,
 ): AcpAgentConnection {
-  const child: ChildProcess = spawn(options.command, options.args, {
+  const launch = planAcpAgentLaunch({
+    deliveryAuthority: options.deliveryAuthority,
+    command: options.command,
+    args: options.args,
     cwd: options.cwd,
     env: options.env,
+  });
+  const child: ChildProcess = spawn(launch.command, launch.args, {
+    cwd: launch.cwd,
+    env: launch.env,
     stdio: ["pipe", "pipe", "pipe"],
   });
   experimental_recordProviderChildIo(child, {
