@@ -935,7 +935,7 @@ const ACP_BRIDGE_LAUNCH = {
 
 describe("host-daemon command schemas", () => {
   it("uses the current host-daemon protocol version", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(174);
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(175);
     expect(HOST_ARTIFACT_MAX_BYTES).toBe(256 * 1024 * 1024);
   });
 
@@ -1684,6 +1684,7 @@ describe("host-daemon command schemas", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: "Be concise.",
         dynamicTools: [],
@@ -1710,6 +1711,7 @@ describe("host-daemon command schemas", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: BRIDGE_LAUNCH,
@@ -1770,6 +1772,7 @@ describe("host-daemon command schemas", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: "Be a helpful thread.",
         dynamicTools: [
@@ -1841,6 +1844,7 @@ describe("host-daemon command schemas", () => {
           permissionScope,
           approvalReviewer,
           permissionEscalation: "ask" as const,
+          deliveryAuthority: "git" as const,
         },
         instructions: "Be concise.",
         dynamicTools: [],
@@ -1894,6 +1898,7 @@ describe("host-daemon command schemas", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: BRIDGE_LAUNCH,
@@ -1954,6 +1959,7 @@ describe("host-daemon command schemas", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
       },
       instructions: "Be a helpful thread.",
       dynamicTools: [],
@@ -1989,6 +1995,7 @@ describe("host-daemon command schemas", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
       },
       resumeContext: {
         bridgeLaunch: BRIDGE_LAUNCH,
@@ -2059,6 +2066,7 @@ describe("host-daemon command schemas", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
       },
       instructions: "Be a helpful thread.",
       dynamicTools: [],
@@ -2087,6 +2095,7 @@ describe("host-daemon command schemas", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
       },
       resumeContext: {
         bridgeLaunch: ACP_BRIDGE_LAUNCH,
@@ -2173,6 +2182,7 @@ describe("host-daemon command schemas", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
       },
       instructions: "Be a helpful thread.",
       dynamicTools: [],
@@ -2331,6 +2341,7 @@ describe("host-daemon command schemas", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: BRIDGE_LAUNCH,
@@ -2378,6 +2389,7 @@ describe("host-daemon command schemas", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: BRIDGE_LAUNCH,
@@ -2418,6 +2430,7 @@ describe("host-daemon command schemas", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: BRIDGE_LAUNCH,
@@ -2457,6 +2470,7 @@ describe("host-daemon command schemas", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: "Be concise.",
         dynamicTools: [],
@@ -2489,6 +2503,7 @@ describe("host-daemon command schemas", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: "Be concise.",
         dynamicTools: [],
@@ -2515,6 +2530,7 @@ describe("host-daemon command schemas", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: BRIDGE_LAUNCH,

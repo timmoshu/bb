@@ -235,6 +235,7 @@ function threadStartCommand(
       permissionScope: "full",
       approvalReviewer: null,
       permissionEscalation: null,
+      deliveryAuthority: "git",
     },
     instructions: "Be a helpful coding agent.",
     dynamicTools: [],
@@ -263,6 +264,7 @@ function turnSubmitCommand(
       permissionScope: "full",
       approvalReviewer: null,
       permissionEscalation: null,
+      deliveryAuthority: "git",
     },
     resumeContext: {
       bridgeLaunch: harness.launch,

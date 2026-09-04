@@ -109,6 +109,7 @@ const fullRuntimeOptionsTemplate = {
   permissionScope: "full",
   approvalReviewer: null,
   permissionEscalation: null,
+  deliveryAuthority: "git",
 } satisfies RuntimeOptionsTemplate;
 
 const workspaceWriteAskRuntimeOptionsTemplate = {
@@ -119,6 +120,7 @@ const workspaceWriteAskRuntimeOptionsTemplate = {
   permissionScope: "workspace",
   approvalReviewer: "user",
   permissionEscalation: "ask",
+  deliveryAuthority: "git",
 } satisfies RuntimeOptionsTemplate;
 
 const workspaceWriteDenyRuntimeOptionsTemplate = {
@@ -129,6 +131,7 @@ const workspaceWriteDenyRuntimeOptionsTemplate = {
   permissionScope: "workspace",
   approvalReviewer: "user",
   permissionEscalation: "deny",
+  deliveryAuthority: "git",
 } satisfies RuntimeOptionsTemplate;
 
 const readonlyAskRuntimeOptionsTemplate = {
@@ -139,6 +142,7 @@ const readonlyAskRuntimeOptionsTemplate = {
   permissionScope: "workspace",
   approvalReviewer: "automatic",
   permissionEscalation: "ask",
+  deliveryAuthority: "git",
 } satisfies RuntimeOptionsTemplate;
 
 const readonlyDenyRuntimeOptionsTemplate = {
@@ -149,6 +153,7 @@ const readonlyDenyRuntimeOptionsTemplate = {
   permissionScope: "workspace",
   approvalReviewer: "automatic",
   permissionEscalation: "deny",
+  deliveryAuthority: "git",
 } satisfies RuntimeOptionsTemplate;
 
 const runtimeOptionsTemplates = {

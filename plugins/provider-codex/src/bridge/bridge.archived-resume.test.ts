@@ -20,6 +20,7 @@ const sessionOptions = {
   permissionScope: "full",
   approvalReviewer: null,
   permissionEscalation: null,
+  deliveryAuthority: "git",
 } as const;
 
 let harness: ReturnType<typeof createBridgeJsonRpcTestHarness>;

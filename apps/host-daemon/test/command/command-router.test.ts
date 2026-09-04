@@ -116,6 +116,7 @@ function createTurnSubmitCommand(
       permissionScope: "full",
       approvalReviewer: null,
       permissionEscalation: null,
+      deliveryAuthority: "git",
     },
     resumeContext: {
       bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -158,6 +159,7 @@ function createThreadStartCommand(): ThreadStartCommand {
       permissionScope: "full",
       approvalReviewer: null,
       permissionEscalation: null,
+      deliveryAuthority: "git",
     },
     instructions: "Be a helpful coding agent.",
     dynamicTools: [],

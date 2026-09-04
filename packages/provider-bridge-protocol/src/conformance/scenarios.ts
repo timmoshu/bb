@@ -86,6 +86,7 @@ function defaultOptions(
       permissionScope: "full",
       approvalReviewer: null,
       permissionEscalation: null,
+      deliveryAuthority: "git",
     }
   );
 }

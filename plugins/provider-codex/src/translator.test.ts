@@ -93,6 +93,7 @@ const WORKSPACE_ASK_OPTIONS = {
   permissionScope: "workspace",
   approvalReviewer: "user",
   permissionEscalation: "ask",
+  deliveryAuthority: "git",
 } satisfies RuntimePermissionPolicy;
 
 interface LinkedWorktreeFixture {

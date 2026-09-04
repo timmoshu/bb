@@ -53,6 +53,7 @@ const FULL_OPTIONS = {
   permissionScope: "full",
   approvalReviewer: null,
   permissionEscalation: null,
+  deliveryAuthority: "git",
 };
 
 let harness: BridgeJsonRpcTestHarness;

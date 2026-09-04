@@ -27,6 +27,7 @@ export const fullRuntimeOptions = {
   permissionScope: "full",
   approvalReviewer: null,
   permissionEscalation: null,
+  deliveryAuthority: "git",
 } satisfies AgentRuntimeExecutionOptions;
 
 export function wait(ms: number): Promise<void> {

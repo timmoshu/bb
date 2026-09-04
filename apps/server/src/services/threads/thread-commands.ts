@@ -1,10 +1,11 @@
-import { environments, events, threads } from "@bb/db";
+import { environments, events, getWorkTogetherThreadContext, threads } from "@bb/db";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   PromptInput,
   PromptMode,
   ProjectExecutionDefaults,
   PermissionEscalation,
+  DeliveryAuthority,
   ResolvedThreadExecutionOptions,
   RuntimeThreadExecutionOptions,
   Thread,
@@ -187,6 +188,15 @@ function resolvePromptMode(
     : undefined;
 }
 
+function resolveDeliveryAuthority(
+  deps: Pick<AppDeps, "db">,
+  threadId: string,
+): DeliveryAuthority {
+  return getWorkTogetherThreadContext(deps.db, threadId) === undefined
+    ? "git"
+    : "none";
+}
+
 function toRuntimeExecutionOptions(
   args: RuntimeExecutionOptionsArgs,
 ): RuntimeThreadExecutionOptions {
@@ -213,6 +223,7 @@ function toRuntimeExecutionOptions(
     reasoningLevel: args.execution.reasoningLevel,
     ...(promptMode !== undefined ? { promptMode } : {}),
     providerOptions,
+    deliveryAuthority: resolveDeliveryAuthority(args.deps, args.threadId),
   };
   if (permissionMode === "full") {
     return {

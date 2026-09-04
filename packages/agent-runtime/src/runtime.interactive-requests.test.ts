@@ -72,6 +72,7 @@ const deniedEscalationOptions = {
   permissionScope: "workspace",
   approvalReviewer: "automatic",
   permissionEscalation: "deny",
+  deliveryAuthority: "git",
 } as const;
 
 async function answerDirectRequest(args: {

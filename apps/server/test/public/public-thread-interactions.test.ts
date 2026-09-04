@@ -1032,6 +1032,7 @@ describe("public thread interaction routes", () => {
       expect(queued.command.options).toMatchObject({
         permissionMode: "full",
         permissionEscalation: null,
+        deliveryAuthority: "git",
       });
     });
   });

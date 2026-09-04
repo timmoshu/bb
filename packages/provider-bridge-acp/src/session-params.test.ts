@@ -15,6 +15,7 @@ import {
 
 const BASE_OPTIONS = {
   permissionMode: "full",
+  deliveryAuthority: "git",
 } as const;
 
 function launchSpecFor(spec: AcpLaunchSpec): AcpLaunchSpec {
@@ -177,6 +178,25 @@ describe("buildAcpSessionParams", () => {
       },
       workspaceWriteRoots: ["/agent-home", "/extra-root"],
     });
+  });
+
+  it("copies deliveryAuthority onto ACP spawn params without changing cwd", () => {
+    expect(
+      buildAcpSessionParams({
+        additionalWorkspaceWriteRoots: [],
+        cwd: "/workspace",
+        options: { ...BASE_OPTIONS, deliveryAuthority: "none" },
+        parameterizedModelPicker: false,
+        launchSpec: launchSpecFor({
+          displayName: "Custom ACP",
+          command: "custom-agent",
+          args: ["serve"],
+          env: {},
+        }),
+        providerLabel: "acp-custom",
+        threadId: "thread-1",
+      }).deliveryAuthority,
+    ).toBe("none");
   });
 
   it("pins the requested model over the protocol when the spec has no model CLI", () => {

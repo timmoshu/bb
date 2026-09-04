@@ -69,6 +69,10 @@ export const permissionEscalationValues = ["ask", "deny"] as const;
 const permissionEscalationSchema = z.enum(permissionEscalationValues);
 export type PermissionEscalation = z.infer<typeof permissionEscalationSchema>;
 
+export const deliveryAuthorityValues = ["none", "git"] as const;
+export const deliveryAuthoritySchema = z.enum(deliveryAuthorityValues);
+export type DeliveryAuthority = z.infer<typeof deliveryAuthoritySchema>;
+
 const promptInputVisibilityValues = ["agent-only"] as const;
 const promptInputVisibilitySchema = z.enum(promptInputVisibilityValues);
 
@@ -507,6 +511,7 @@ const runtimeThreadExecutionBaseOptionsSchema = z.object({
   reasoningLevel: reasoningLevelSchema,
   promptMode: promptModeSchema.optional(),
   providerOptions: jsonObjectSchema,
+  deliveryAuthority: deliveryAuthoritySchema,
 });
 
 export const runtimeThreadExecutionOptionsSchema =

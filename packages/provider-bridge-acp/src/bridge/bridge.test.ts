@@ -157,12 +157,14 @@ function executionOptions(args: {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         }
       : {
           permissionMode: "accept-edits",
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: args.permissionEscalation ?? "ask",
+          deliveryAuthority: "git",
         }),
     ...(args.envVars ? { envVars: args.envVars } : {}),
     ...(args.instructions ? { instructions: args.instructions } : {}),
@@ -1918,6 +1920,7 @@ describe("acp bridge", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
         providerOptions: {
           acpLaunchSpec: {
             displayName: "Fake ACP Agent",
@@ -1949,6 +1952,7 @@ describe("acp bridge", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
       },
     });
     await waitForResponse(turnId);
@@ -2173,6 +2177,7 @@ describe("acp bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           providerOptions: {
             additionalWorkspaceWriteRoots: [outsideDir],
             acpLaunchSpec: {
@@ -2205,6 +2210,7 @@ describe("acp bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
         },
       });
       await waitForResponse(turnId);

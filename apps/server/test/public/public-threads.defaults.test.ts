@@ -88,6 +88,7 @@ describe("public thread default routes", () => {
           reasoningLevel: "high",
           permissionMode: "accept-edits",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
         },
       });
       expect(
@@ -263,6 +264,7 @@ describe("public thread default routes", () => {
           reasoningLevel: "high",
           permissionMode: "accept-edits",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
         },
       });
     });
@@ -560,6 +562,7 @@ describe("public thread default routes", () => {
           reasoningLevel: "high",
           permissionMode: "accept-edits",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
         },
       });
       expect(

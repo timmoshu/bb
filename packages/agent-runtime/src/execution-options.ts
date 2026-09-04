@@ -56,6 +56,7 @@ export function toProviderExecutionContext(
       : {}),
     providerOptions: args.execOpts.providerOptions,
     ...permissionPolicy,
+    deliveryAuthority: args.execOpts.deliveryAuthority,
     instructions: args.instructions,
     envVars: args.envVars,
     ...(args.skillRoots && args.skillRoots.length > 0

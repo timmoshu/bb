@@ -1,4 +1,5 @@
 import {
+  deliveryAuthoritySchema,
   promptModeSchema,
   reasoningLevelSchema,
   runtimePermissionPolicySchema,
@@ -15,6 +16,7 @@ export const bridgeExecutionOptionsSchema = z
     instructions: z.string().optional(),
     envVars: z.record(z.string(), z.string()).optional(),
     providerOptions: z.record(z.string(), z.unknown()).optional(),
+    deliveryAuthority: deliveryAuthoritySchema,
   })
   .and(runtimePermissionPolicySchema);
 

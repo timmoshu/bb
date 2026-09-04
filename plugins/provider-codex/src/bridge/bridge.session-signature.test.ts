@@ -17,6 +17,7 @@ const sessionOptions = {
   permissionScope: "full",
   approvalReviewer: null,
   permissionEscalation: null,
+  deliveryAuthority: "git",
 } as const;
 
 const autoAskSessionOptions = {
@@ -24,11 +25,13 @@ const autoAskSessionOptions = {
   permissionScope: "workspace",
   approvalReviewer: "automatic",
   permissionEscalation: "ask",
+  deliveryAuthority: "git",
 } as const;
 
 const autoDenySessionOptions = {
   ...autoAskSessionOptions,
   permissionEscalation: "deny",
+  deliveryAuthority: "git",
 } as const;
 
 let harness: ReturnType<typeof createBridgeJsonRpcTestHarness>;

@@ -44,6 +44,7 @@ it("passes the canonical protocol suite against the fake agent", async () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
         providerOptions: {
           acpLaunchSpec: {
             displayName: "Fake ACP Agent",

@@ -524,6 +524,7 @@ function canonicalOptions(args?: {
     permissionScope: "workspace",
     approvalReviewer: "user",
     permissionEscalation: args?.permissionEscalation ?? "ask",
+    deliveryAuthority: "git",
     instructions: "test",
     providerOptions: {
       workflowsEnabled: false,
@@ -733,6 +734,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -1389,12 +1391,14 @@ describe("bridge", () => {
       permissionScope: "workspace",
       approvalReviewer: "automatic",
       permissionEscalation: "deny",
+      deliveryAuthority: "git",
     } satisfies RuntimePermissionPolicy;
     const FULL_POLICY = {
       permissionMode: "full",
       permissionScope: "full",
       approvalReviewer: null,
       permissionEscalation: null,
+      deliveryAuthority: "git",
     } satisfies RuntimePermissionPolicy;
 
     const policyCases = [
@@ -1543,6 +1547,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "automatic",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -1772,6 +1777,7 @@ describe("bridge", () => {
             permissionScope: "full",
             approvalReviewer: null,
             permissionEscalation: null,
+            deliveryAuthority: "git",
             instructions: "test",
             providerOptions: {
               workflowsEnabled: false,
@@ -1848,6 +1854,7 @@ describe("bridge", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -2232,6 +2239,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           providerOptions: {},
         },
       });
@@ -2273,6 +2281,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           providerOptions: {},
         },
       });
@@ -2545,6 +2554,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -2598,6 +2608,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -2653,6 +2664,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           instructions: "test",
           reasoningLevel: "max",
           providerOptions: {
@@ -2707,6 +2719,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "deny",
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -2770,6 +2783,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "automatic",
           permissionEscalation: "deny",
+          deliveryAuthority: "git",
           providerOptions: {
             workflowsEnabled: false,
             additionalWorkspaceWriteRoots: [
@@ -2890,6 +2904,7 @@ describe("bridge", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -2912,6 +2927,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -2942,6 +2958,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "automatic",
           permissionEscalation: "deny",
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -2972,6 +2989,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "automatic",
           permissionEscalation: "deny",
+          deliveryAuthority: "git",
           instructions: "test",
           model: "claude-opus-4-1",
           providerOptions: {
@@ -3064,6 +3082,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           instructions: "test",
           model: "claude-haiku-4-5",
           reasoningLevel: "low",
@@ -3093,6 +3112,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           model: "claude-opus-5[1m]",
           reasoningLevel: "max",
           providerOptions: {
@@ -3169,6 +3189,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           model: "claude-opus-5[1m]",
           reasoningLevel: "xhigh",
           providerOptions: {
@@ -3264,6 +3285,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "deny",
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -3288,6 +3310,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "deny",
+          deliveryAuthority: "git",
           providerOptions: {},
         },
       });
@@ -3318,6 +3341,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           providerOptions: {},
         },
       });
@@ -3373,6 +3397,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "deny",
+          deliveryAuthority: "git",
           providerOptions: {},
         },
       });
@@ -3670,6 +3695,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -3702,6 +3728,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           providerOptions: {},
         },
       });
@@ -3857,6 +3884,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -3879,6 +3907,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           providerOptions: {},
         },
       });
@@ -3924,6 +3953,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -3949,6 +3979,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           providerOptions: {},
         },
       });
@@ -4004,6 +4035,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -4054,6 +4086,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -4078,6 +4111,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           instructions: "test",
           providerOptions: {
             workflowsEnabled: false,
@@ -4145,6 +4179,7 @@ describe("bridge", () => {
             permissionScope: "workspace",
             approvalReviewer: "user",
             permissionEscalation: "ask",
+            deliveryAuthority: "git",
             providerOptions: {},
           },
         });
@@ -4191,6 +4226,7 @@ describe("bridge", () => {
             permissionScope: "workspace",
             approvalReviewer: "automatic",
             permissionEscalation: "deny",
+            deliveryAuthority: "git",
             instructions: "test",
             providerOptions: {
               workflowsEnabled: false,
@@ -4261,6 +4297,7 @@ describe("bridge", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           providerOptions: {},
         },
       });
@@ -4438,6 +4475,7 @@ describe("canonical skills/configure", () => {
     permissionScope: "full",
     approvalReviewer: null,
     permissionEscalation: null,
+    deliveryAuthority: "git",
   };
 
   it("assembles a local plugin per generic skill root and loads them on canonical sessions", async () => {
@@ -4529,6 +4567,7 @@ describe("canonical model context-window hint", () => {
     permissionScope: "full",
     approvalReviewer: null,
     permissionEscalation: null,
+    deliveryAuthority: "git",
   };
 
   it("uses Fable's Claude Code capacity through a custom API endpoint", async () => {

@@ -23,6 +23,7 @@ export const FULL_PERMISSION_OPTIONS = {
   permissionScope: "full",
   approvalReviewer: null,
   permissionEscalation: null,
+  deliveryAuthority: "git",
 } as const;
 
 const INITIALIZE_ID = 100;

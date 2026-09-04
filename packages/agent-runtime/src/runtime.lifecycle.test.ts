@@ -396,6 +396,7 @@ describe("createAgentRuntime lifecycle", () => {
           permissionScope: "workspace",
           approvalReviewer: "automatic",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           providerOptions: {
             memoryEnabled: true,
             providerSubagentsEnabled: true,
@@ -415,6 +416,7 @@ describe("createAgentRuntime lifecycle", () => {
           permissionScope: "workspace",
           approvalReviewer: "automatic",
           permissionEscalation: "deny",
+          deliveryAuthority: "git",
           reasoningLevel: "high",
           providerOptions: {
             memoryEnabled: false,
@@ -522,6 +524,7 @@ describe("createAgentRuntime lifecycle", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
         },
       });
 
@@ -538,6 +541,7 @@ describe("createAgentRuntime lifecycle", () => {
           permissionScope: "workspace",
           approvalReviewer: "user",
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
         },
       });
       expect(recordedMethods(record)).not.toContain("thread/resume");
@@ -566,6 +570,7 @@ describe("createAgentRuntime lifecycle", () => {
         options: {
           ...fullRuntimeOptions,
           permissionEscalation: "ask",
+          deliveryAuthority: "git",
           permissionMode: "accept-edits",
           permissionScope: "workspace",
           approvalReviewer: "user",
@@ -579,6 +584,7 @@ describe("createAgentRuntime lifecycle", () => {
         options: {
           ...fullRuntimeOptions,
           permissionEscalation: "deny",
+          deliveryAuthority: "git",
           permissionMode: "auto",
           permissionScope: "workspace",
           approvalReviewer: "automatic",
@@ -594,6 +600,7 @@ describe("createAgentRuntime lifecycle", () => {
           permissionScope: "workspace",
           approvalReviewer: "automatic",
           permissionEscalation: "deny",
+          deliveryAuthority: "git",
         },
       });
 

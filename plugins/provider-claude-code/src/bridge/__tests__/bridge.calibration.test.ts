@@ -246,6 +246,7 @@ const CANONICAL_OPTIONS = {
   permissionScope: "workspace",
   approvalReviewer: "automatic",
   permissionEscalation: "ask",
+  deliveryAuthority: "git",
   instructions: "test",
 } as const;
 

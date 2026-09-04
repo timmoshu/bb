@@ -436,6 +436,7 @@ describe("execution options", () => {
         permissionScope: "workspace",
         approvalReviewer: "automatic",
         permissionEscalation: "ask",
+        deliveryAuthority: "git",
         providerOptions: { workflowsEnabled: false },
       },
     });

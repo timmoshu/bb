@@ -1,5 +1,6 @@
 import type {
   ClientTurnRequestId,
+  DeliveryAuthority,
   DynamicTool,
   InstructionMode,
   JsonObject,
@@ -31,6 +32,7 @@ export type ProviderExecutionContext = {
   instructions?: string;
   envVars?: Record<string, string>;
   skillRoots?: readonly AgentRuntimeSkillRoot[];
+  deliveryAuthority: DeliveryAuthority;
 } & RuntimePermissionPolicy;
 
 export type AdapterCommand =

@@ -109,6 +109,7 @@ describe("provider registry", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
       },
       instructionMode: "append",
     });
@@ -219,6 +220,7 @@ describe("provider registry", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
       },
       instructionMode: "append",
     });
@@ -267,6 +269,7 @@ describe("provider registry", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
         envVars: { BB_THREAD_ID: "thread-1" },
       },
       instructionMode: "append",
@@ -327,6 +330,7 @@ describe("provider registry", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
       },
       instructionMode: "append",
     });

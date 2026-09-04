@@ -278,6 +278,7 @@ const CANONICAL_OPTIONS = {
   permissionScope: "full",
   approvalReviewer: null,
   permissionEscalation: null,
+  deliveryAuthority: "git",
 } as const;
 
 function promptInput(text: string): PromptInput[] {

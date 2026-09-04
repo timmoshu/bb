@@ -36,6 +36,7 @@ const fullModeOptions: ProviderExecutionContext = {
   permissionScope: "full",
   approvalReviewer: null,
   permissionEscalation: null,
+  deliveryAuthority: "git",
   providerOptions: {},
 };
 

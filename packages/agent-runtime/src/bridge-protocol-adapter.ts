@@ -142,6 +142,7 @@ function toBridgeWireOptions(
     permissionScope,
     approvalReviewer,
     permissionEscalation,
+    deliveryAuthority,
   } = options;
   const providerOptions = {
     ...staticProviderOptions,
@@ -158,6 +159,7 @@ function toBridgeWireOptions(
     permissionScope,
     approvalReviewer,
     permissionEscalation,
+    deliveryAuthority,
     ...(Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
   };
 }

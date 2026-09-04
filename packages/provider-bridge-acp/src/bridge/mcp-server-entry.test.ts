@@ -135,6 +135,7 @@ async function readAdvertisedMcpServer(
       permissionScope: "full",
       approvalReviewer: null,
       permissionEscalation: null,
+      deliveryAuthority: "git",
       providerOptions: {
         acpLaunchSpec: {
           displayName: "Fake ACP",
@@ -175,6 +176,7 @@ async function readAdvertisedMcpServer(
       permissionScope: "full",
       approvalReviewer: null,
       permissionEscalation: null,
+      deliveryAuthority: "git",
     },
     input: [{ type: "text", text: "echo-mcp-server-config", mentions: [] }],
   });

@@ -10,6 +10,7 @@ const baseThreadStartParams = {
     permissionScope: "workspace",
     approvalReviewer: "user",
     permissionEscalation: "ask",
+    deliveryAuthority: "git",
     providerOptions: { workflowsEnabled: false },
   },
 };

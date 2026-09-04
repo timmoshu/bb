@@ -19,6 +19,7 @@ const EXECUTION_CONTEXT = {
   permissionScope: "workspace",
   approvalReviewer: "user",
   permissionEscalation: "ask",
+  deliveryAuthority: "git",
 } satisfies ClaudeSessionExecutionOptions;
 
 function toCanonicalWireOptions(options: typeof EXECUTION_CONTEXT) {
@@ -45,6 +46,7 @@ const WORKSPACE_ACCEPT_EDITS_POLICY = {
   permissionScope: "workspace",
   approvalReviewer: "user",
   permissionEscalation: "deny",
+  deliveryAuthority: "git",
 } satisfies RuntimePermissionPolicy;
 
 const WORKSPACE_AUTO_POLICY = {
@@ -52,6 +54,7 @@ const WORKSPACE_AUTO_POLICY = {
   permissionScope: "workspace",
   approvalReviewer: "automatic",
   permissionEscalation: "ask",
+  deliveryAuthority: "git",
 } satisfies RuntimePermissionPolicy;
 
 const FULL_POLICY = {
@@ -59,6 +62,7 @@ const FULL_POLICY = {
   permissionScope: "full",
   approvalReviewer: null,
   permissionEscalation: null,
+  deliveryAuthority: "git",
 } satisfies RuntimePermissionPolicy;
 
 describe("buildClaudeSessionParams", () => {
@@ -271,6 +275,7 @@ describe("claude session option passthrough", () => {
       reasoningLevel: "max",
       permissionMode: "acceptEdits",
       permissionEscalation: "ask",
+      deliveryAuthority: "git",
       baseInstructions: expect.stringContaining(
         "Focus on the failing tests first.",
       ),
@@ -317,6 +322,7 @@ describe("claude session option passthrough", () => {
     expect(params).toMatchObject({
       permissionMode: "auto",
       permissionEscalation: "deny",
+      deliveryAuthority: "git",
     });
   });
 
@@ -336,6 +342,7 @@ describe("claude session option passthrough", () => {
     expect(params).toMatchObject({
       permissionMode: "bypassPermissions",
       permissionEscalation: null,
+      deliveryAuthority: "git",
     });
   });
 });
@@ -351,6 +358,7 @@ describe("buildClaudeTurnParams", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
       },
     });
     expect(params.workflowsEnabled).toBeUndefined();
@@ -389,6 +397,7 @@ describe("buildClaudeTurnParams", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
         providerOptions: { claudeCodePermissionMode: "plan" },
       },
     });
@@ -409,6 +418,7 @@ describe("buildClaudeTurnParams", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
         providerOptions: { workflowsEnabled: true },
       },
     });

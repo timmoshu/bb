@@ -91,6 +91,7 @@ describe("thread command dispatch", () => {
         permissionScope: "full",
         approvalReviewer: null,
         permissionEscalation: null,
+        deliveryAuthority: "git",
       },
       instructions: "Be a helpful coding agent.",
       dynamicTools: [],
@@ -146,6 +147,7 @@ describe("thread command dispatch", () => {
             permissionScope: "full",
             approvalReviewer: null,
             permissionEscalation: null,
+            deliveryAuthority: "git",
           },
           target: { mode: "start" },
           resumeContext: {
@@ -218,6 +220,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: "Be a helpful coding agent.",
         dynamicTools: [],
@@ -320,6 +323,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -418,6 +422,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: "Be a helpful coding agent.",
         dynamicTools: [],
@@ -570,6 +575,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           workspaceContext: {
@@ -686,6 +692,7 @@ describe("thread command dispatch", () => {
             permissionScope: "full",
             approvalReviewer: null,
             permissionEscalation: null,
+            deliveryAuthority: "git",
           },
           resumeContext: {
             bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -747,6 +754,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: "Be a helpful coding agent.",
         dynamicTools: [],
@@ -811,6 +819,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: "Be a helpful coding agent.",
         dynamicTools: [],
@@ -873,6 +882,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: "Be a helpful coding agent.",
         dynamicTools: [],
@@ -951,6 +961,7 @@ describe("thread command dispatch", () => {
             permissionScope: "full",
             approvalReviewer: null,
             permissionEscalation: null,
+            deliveryAuthority: "git",
           },
           instructions: "Be a helpful coding agent.",
           dynamicTools: [],
@@ -1023,6 +1034,7 @@ describe("thread command dispatch", () => {
             permissionScope: "full",
             approvalReviewer: null,
             permissionEscalation: null,
+            deliveryAuthority: "git",
           },
           instructions: "Be a helpful coding agent.",
           dynamicTools: [],
@@ -1085,6 +1097,7 @@ describe("thread command dispatch", () => {
             permissionScope: "full",
             approvalReviewer: null,
             permissionEscalation: null,
+            deliveryAuthority: "git",
           },
           instructions: "Be a helpful coding agent.",
           dynamicTools: [],
@@ -1140,6 +1153,7 @@ describe("thread command dispatch", () => {
             permissionScope: "full",
             approvalReviewer: null,
             permissionEscalation: null,
+            deliveryAuthority: "git",
           },
           resumeContext: {
             bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -1201,6 +1215,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: "Be a helpful coding agent.",
         dynamicTools: [],
@@ -1305,6 +1320,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: "Be a helpful coding agent.",
         dynamicTools: [],
@@ -1404,6 +1420,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: "Be a helpful coding agent.",
         dynamicTools: [],
@@ -1449,6 +1466,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -1540,6 +1558,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -1576,6 +1595,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -1635,6 +1655,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -1674,6 +1695,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -1729,6 +1751,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -1796,6 +1819,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -1872,6 +1896,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -1931,6 +1956,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -1985,6 +2011,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -2035,6 +2062,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: resumeLaunch,
@@ -2134,6 +2162,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         resumeContext: {
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
@@ -2278,6 +2307,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: threadInstructions,
         dynamicTools: [
@@ -2340,6 +2370,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: "test",
         dynamicTools: [],
@@ -2380,6 +2411,7 @@ describe("thread command dispatch", () => {
           permissionScope: "full",
           approvalReviewer: null,
           permissionEscalation: null,
+          deliveryAuthority: "git",
         },
         instructions: "test",
         dynamicTools: [],
@@ -2420,6 +2452,7 @@ describe("thread command dispatch", () => {
             permissionScope: "full",
             approvalReviewer: null,
             permissionEscalation: null,
+            deliveryAuthority: "git",
           },
           instructions: "test",
           dynamicTools: [],

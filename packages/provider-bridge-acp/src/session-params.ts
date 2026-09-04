@@ -1,5 +1,6 @@
 import type {
   DynamicTool,
+  DeliveryAuthority,
   PermissionMode,
   ReasoningLevel,
   ServiceTier,
@@ -23,6 +24,7 @@ export interface AcpSessionExecutionOptions {
   envVars?: Record<string, string> | undefined;
   permissionMode: PermissionMode;
   skillRoots?: readonly AcpSkillRoot[] | undefined;
+  deliveryAuthority: DeliveryAuthority;
 }
 
 export interface AcpSkillRoot {
@@ -74,6 +76,7 @@ export interface AcpSessionParams {
   parameterizedModelPicker: boolean;
   permissionCli?: AcpBridgePermissionCli;
   permissionMode: "accept-edits" | "full";
+  deliveryAuthority: DeliveryAuthority;
   workspaceWriteRoots: string[];
   envVars?: Record<string, string>;
   instructions?: string;
@@ -346,6 +349,7 @@ export function buildAcpSessionParams(
       ? { launchReasoningLevel: options.reasoningLevel }
       : {}),
     permissionMode: options.permissionMode,
+    deliveryAuthority: options.deliveryAuthority,
     workspaceWriteRoots: [cwd, ...args.additionalWorkspaceWriteRoots],
     ...(Object.keys(envVars).length > 0 ? { envVars } : {}),
     ...(instructions ? { instructions } : {}),

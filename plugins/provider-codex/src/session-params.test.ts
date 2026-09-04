@@ -29,6 +29,7 @@ const WORKSPACE_ASK_OPTIONS = {
   permissionScope: "workspace",
   approvalReviewer: "user",
   permissionEscalation: "ask",
+  deliveryAuthority: "git",
 } satisfies RuntimePermissionPolicy;
 
 const WORKSPACE_DENY_OPTIONS = {
@@ -36,6 +37,7 @@ const WORKSPACE_DENY_OPTIONS = {
   permissionScope: "workspace",
   approvalReviewer: "user",
   permissionEscalation: "deny",
+  deliveryAuthority: "git",
 } satisfies RuntimePermissionPolicy;
 
 const AUTO_ASK_OPTIONS = {
@@ -43,6 +45,7 @@ const AUTO_ASK_OPTIONS = {
   permissionScope: "workspace",
   approvalReviewer: "automatic",
   permissionEscalation: "ask",
+  deliveryAuthority: "git",
 } satisfies RuntimePermissionPolicy;
 
 const AUTO_DENY_OPTIONS = {
@@ -50,6 +53,7 @@ const AUTO_DENY_OPTIONS = {
   permissionScope: "workspace",
   approvalReviewer: "automatic",
   permissionEscalation: "deny",
+  deliveryAuthority: "git",
 } satisfies RuntimePermissionPolicy;
 
 const FULL_OPTIONS = {
@@ -57,6 +61,7 @@ const FULL_OPTIONS = {
   permissionScope: "full",
   approvalReviewer: null,
   permissionEscalation: null,
+  deliveryAuthority: "git",
 } satisfies RuntimePermissionPolicy;
 
 interface LinkedWorktreeFixture {
