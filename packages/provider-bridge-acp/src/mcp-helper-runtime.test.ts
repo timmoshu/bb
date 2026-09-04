@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
@@ -70,7 +70,7 @@ describe("MCP helper runtime", () => {
     ).toThrow(AcpSandboxLaunchError);
   });
 
-  it("uses packageRootHint when the bundled bridge sits outside the release", () => {
+  it("locates the BB package root from a release loader when the bundled bridge is outside", () => {
     const outside = mkdtempSync(join(tmpdir(), "wt-mcp-bundled-"));
     const release = mkdtempSync(join(tmpdir(), "wt-mcp-release-"));
     scratch.push(outside, release);
@@ -78,51 +78,32 @@ describe("MCP helper runtime", () => {
     writeFileSync(bridge, "export {}\n");
     writeFileSync(join(release, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
     mkdirSync(join(release, "packages", "provider-bridge-acp"), { recursive: true });
-    expect(() =>
-      resolveAcpMcpHelperRuntime({
-        execPath: process.execPath,
-        execArgv: [],
-        bridgeModulePath: bridge,
-      }),
-    ).toThrow(/cannot locate the BB package root/);
+    const loader = join(release, "node_modules", "tsx", "dist", "esm", "index.mjs");
+    mkdirSync(join(release, "node_modules", "tsx", "dist", "esm"), { recursive: true });
+    writeFileSync(loader, "export {}\n");
     const helper = resolveAcpMcpHelperRuntime({
       execPath: process.execPath,
-      execArgv: [],
+      execArgv: ["--import", loader],
       bridgeModulePath: bridge,
-      packageRootHint: release,
     });
     expect(helper.roBinds).toContain(realpathSync(release));
+    expect(helper.args).toContain(realpathSync(loader));
     expect(helper.args).toContain(realpathSync(bridge));
   });
 
-  it("fails closed on a malformed or too-broad packageRootHint", () => {
-    const outside = mkdtempSync(join(tmpdir(), "wt-mcp-hint-"));
+  it("fails closed when neither loader nor bridge sits in a BB release", () => {
+    const outside = mkdtempSync(join(tmpdir(), "wt-mcp-orphan-"));
     scratch.push(outside);
     const bridge = join(outside, "bridge.js");
+    const loader = join(outside, "loader.mjs");
     writeFileSync(bridge, "export {}\n");
+    writeFileSync(loader, "export {}\n");
     expect(() =>
       resolveAcpMcpHelperRuntime({
         execPath: process.execPath,
-        execArgv: [],
+        execArgv: ["--import", loader],
         bridgeModulePath: bridge,
-        packageRootHint: outside,
       }),
-    ).toThrow(/not a BB release root/);
-    expect(() =>
-      resolveAcpMcpHelperRuntime({
-        execPath: process.execPath,
-        execArgv: [],
-        bridgeModulePath: bridge,
-        packageRootHint: "/",
-      }),
-    ).toThrow(/too-broad/);
-    expect(() =>
-      resolveAcpMcpHelperRuntime({
-        execPath: process.execPath,
-        execArgv: [],
-        bridgeModulePath: bridge,
-        packageRootHint: homedir(),
-      }),
-    ).toThrow(/too-broad/);
+    ).toThrow(/cannot locate the BB package root/);
   });
 });

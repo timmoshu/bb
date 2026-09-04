@@ -8,7 +8,6 @@ export interface ResolveAcpMcpHelperRuntimeInput {
   execPath: string;
   execArgv: readonly string[];
   bridgeModulePath: string;
-  packageRootHint?: string;
   resolveSpecifier?: (specifier: string) => string;
   hostHome?: string;
 }
@@ -124,25 +123,8 @@ function assertNotTooBroadPackageRoot(dir: string, hostHome: string): void {
   }
 }
 
-function resolveHintedPackageRoot(hint: string, hostHome: string): string {
-  const candidate = isAbsolute(hint) ? hint : resolve(hint);
-  if (!existsSync(candidate) || !statSync(candidate).isDirectory()) {
-    throw new AcpSandboxLaunchError(
-      `ACP sandbox MCP packageRootHint is not a directory: ${hint}`,
-    );
-  }
-  const real = realpathSync(candidate);
-  assertNotTooBroadPackageRoot(real, hostHome);
-  if (!hasBbReleaseMarkers(real)) {
-    throw new AcpSandboxLaunchError(
-      `ACP sandbox MCP packageRootHint is not a BB release root: ${real}`,
-    );
-  }
-  return real;
-}
-
-export function findBbPackageRoot(startFile: string, hostHome = homedir()): string {
-  let dir = dirname(realpathSync(assertExistingFile("MCP bridge module", startFile)));
+function tryAscendToBbPackageRoot(startFile: string, hostHome: string): string | undefined {
+  let dir = dirname(realpathSync(startFile));
   for (;;) {
     if (hasBbReleaseMarkers(dir)) {
       const real = realpathSync(dir);
@@ -150,24 +132,34 @@ export function findBbPackageRoot(startFile: string, hostHome = homedir()): stri
       return real;
     }
     const parent = dirname(dir);
-    if (parent === dir) {
-      throw new AcpSandboxLaunchError(
-        "ACP sandbox cannot locate the BB package root for the MCP helper",
-      );
-    }
+    if (parent === dir) return undefined;
     dir = parent;
   }
 }
 
+export function findBbPackageRoot(startFile: string, hostHome = homedir()): string {
+  const file = assertExistingFile("MCP runtime file", startFile);
+  const found = tryAscendToBbPackageRoot(file, hostHome);
+  if (found === undefined) {
+    throw new AcpSandboxLaunchError(
+      "ACP sandbox cannot locate the BB package root for the MCP helper",
+    );
+  }
+  return found;
+}
+
 function resolveBbPackageRoot(
+  loaderPaths: readonly string[],
   bridgeModulePath: string,
-  hint: string | undefined,
   hostHome: string,
 ): string {
-  if (hint !== undefined && hint.length > 0) {
-    return resolveHintedPackageRoot(hint, hostHome);
+  for (const start of [...loaderPaths, bridgeModulePath]) {
+    const found = tryAscendToBbPackageRoot(start, hostHome);
+    if (found !== undefined) return found;
   }
-  return findBbPackageRoot(bridgeModulePath, hostHome);
+  throw new AcpSandboxLaunchError(
+    "ACP sandbox cannot locate the BB package root for the MCP helper",
+  );
 }
 
 export function resolveAcpMcpHelperRuntime(
@@ -182,8 +174,8 @@ export function resolveAcpMcpHelperRuntime(
   );
   const hostHome = resolve(input.hostHome ?? homedir());
   const packageRoot = resolveBbPackageRoot(
+    rewritten.loaderPaths,
     bridgeModulePath,
-    input.packageRootHint,
     hostHome,
   );
   const roBinds = new Set<string>([command, packageRoot, ...rewritten.loaderPaths]);

@@ -301,7 +301,6 @@ function noneMcpHelperRuntime() {
     execPath: process.execPath,
     execArgv: process.execArgv,
     bridgeModulePath: fileURLToPath(import.meta.url),
-    packageRootHint: process.cwd(),
     resolveSpecifier: (specifier) => import.meta.resolve(specifier),
   });
 }
