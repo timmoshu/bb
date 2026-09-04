@@ -10,6 +10,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { turnScope, type ThreadEvent } from "@bb/domain";
 import type { RuntimePermissionPolicy } from "@bb/domain";
+type CodexPermissionOptions = RuntimePermissionPolicy & {
+  deliveryAuthority: "git" | "none";
+};
 import { experimental_createDeltaAssembler as createDeltaAssembler } from "@get-bb/plugin-sdk/provider-bridge/testing";
 import type { DeltaAssembler } from "@get-bb/plugin-sdk/provider-bridge/testing";
 import type { ServerNotification as CodexServerNotification } from "./generated/codex-app-server/schema/ServerNotification.js";
@@ -94,7 +97,7 @@ const WORKSPACE_ASK_OPTIONS = {
   approvalReviewer: "user",
   permissionEscalation: "ask",
   deliveryAuthority: "git",
-} satisfies RuntimePermissionPolicy;
+} satisfies CodexPermissionOptions;
 
 interface LinkedWorktreeFixture {
   cleanup(): void;

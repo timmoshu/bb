@@ -1,9 +1,16 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ThreadEvent } from "@bb/domain";
+import type { DynamicTool, ThreadEvent } from "@bb/domain";
 import { createAgentRuntime } from "./runtime.js";
 import {
   createScriptedEchoLaunch,
@@ -15,7 +22,12 @@ import {
   type LaunchBoundAgentRuntime,
 } from "./test/runtime-test-harness.js";
 import { promptTextInput } from "./test/prompt-input.js";
-import type { AgentRuntime, AgentRuntimeBridgeLaunch } from "./types.js";
+import type {
+  AgentRuntime,
+  AgentRuntimeBridgeLaunch,
+  AgentRuntimeExecutionOptions,
+  AgentRuntimeOptions,
+} from "./types.js";
 
 const codexBridgeModulePath = fileURLToPath(
   new URL(
@@ -57,6 +69,8 @@ describe("codex process topology", () => {
   function createCodexTopologyRuntime(
     args: {
       fakeScript?: Record<string, unknown>;
+      extraEnv?: Record<string, string>;
+      onToolCall?: AgentRuntimeOptions["onToolCall"];
       threadCreationTimeoutMs?: number;
     } = {},
   ): CodexTopologyRuntime {
@@ -82,8 +96,10 @@ describe("codex process topology", () => {
     const runtime = withBridgeLaunch(
       createAgentRuntime({
         workspacePath: workspaceDir,
+        workTogetherWorkCwdRoot: workspaceDir,
         env: {
           ...record.env,
+          ...args.extraEnv,
           BB_CODEX_BRIDGE_APP_SERVER_COMMAND: process.execPath,
           BB_CODEX_BRIDGE_APP_SERVER_ARGS: JSON.stringify([
             fakeAppServerPath,
@@ -92,7 +108,9 @@ describe("codex process topology", () => {
         },
         onEvent: (event) => events.push(event),
         onProcessExit: (info) => bridgeExits.push({ expected: info.expected }),
-        onToolCall: async () => ({ contentItems: [], success: true }),
+        onToolCall:
+          args.onToolCall ??
+          (async () => ({ contentItems: [], success: true })),
         ...(args.threadCreationTimeoutMs === undefined
           ? {}
           : {
@@ -138,6 +156,8 @@ describe("codex process topology", () => {
     runtime: LaunchBoundAgentRuntime,
     threadId: string,
     bridgeLaunch?: AgentRuntimeBridgeLaunch,
+    options: AgentRuntimeExecutionOptions = fullRuntimeOptions,
+    dynamicTools?: DynamicTool[],
   ): Promise<string> {
     const { providerThreadId } = await runtime.startThread({
       ...(bridgeLaunch === undefined ? {} : { bridgeLaunch }),
@@ -145,10 +165,154 @@ describe("codex process topology", () => {
       projectId: "p1",
       providerId: "codex",
       threadId,
-      options: fullRuntimeOptions,
+      options,
+      ...(dynamicTools === undefined ? {} : { dynamicTools }),
     });
     return providerThreadId;
   }
+
+  it("sandboxes none-authority Codex in the admitted Work cwd without ambient host identity", async () => {
+    const workCwd = join(workspaceDir, "work");
+    mkdirSync(workCwd);
+    const siblingPath = join(workspaceDir, "host-secret");
+    writeFileSync(siblingPath, "secret");
+    const remotePath = join(workspaceDir, "remote.git");
+    execFileSync("/usr/bin/git", ["init", "--bare", remotePath]);
+    execFileSync("/usr/bin/git", ["init", workCwd]);
+    execFileSync("/usr/bin/git", ["remote", "add", "origin", remotePath], {
+      cwd: workCwd,
+    });
+    const probePath = join(workCwd, "sandbox-probe.json");
+    const codexHome = join(workspaceDir, "codex-source");
+    mkdirSync(codexHome);
+    writeFileSync(join(codexHome, "auth.json"), "{}");
+    const toolCalls: string[] = [];
+    const toolNames = [
+      "wt_checkpoint_report",
+      "wt_result_report",
+      "wt_needs_you_report",
+      "wt_repository_deliver",
+    ];
+    const topology = createCodexTopologyRuntime({
+      extraEnv: {
+        CODEX_HOME: codexHome,
+        GH_TOKEN: "must-not-pass",
+        SSH_AUTH_SOCK: "/tmp/must-not-pass.sock",
+        AWS_ACCESS_KEY_ID: "must-not-pass",
+        DOCKER_HOST: "unix:///tmp/must-not-pass.sock",
+        DATABASE_URL: "must-not-pass",
+        CI_JOB_TOKEN: "must-not-pass",
+      },
+      fakeScript: {
+        processLogPath: join(workCwd, "process.log"),
+        sandboxProbe: {
+          outputPath: probePath,
+          siblingPath,
+          envKeys: [
+            "GH_TOKEN",
+            "SSH_AUTH_SOCK",
+            "AWS_ACCESS_KEY_ID",
+            "DOCKER_HOST",
+            "DATABASE_URL",
+            "CI_JOB_TOKEN",
+          ],
+        },
+        turns: [
+          [
+            {
+              method: "turn/started",
+              params: {
+                threadId: "fixture",
+                turn: { id: "turn-tools", status: "inProgress" },
+              },
+            },
+            ...toolNames.map((tool, index) => ({
+              kind: "request",
+              method: "item/tool/call",
+              params: {
+                threadId: "fixture",
+                turnId: "turn-tools",
+                callId: `call-${index}`,
+                tool,
+                arguments: {},
+              },
+            })),
+            {
+              method: "turn/completed",
+              params: {
+                threadId: "fixture",
+                turn: { id: "turn-tools", status: "completed" },
+              },
+            },
+          ],
+        ],
+      },
+      onToolCall: async (request) => {
+        toolCalls.push(request.tool);
+        return {
+          contentItems: [{ type: "inputText", text: "ok" }],
+          success: true,
+        };
+      },
+    });
+    const options = {
+      ...fullRuntimeOptions,
+      permissionMode: "accept-edits" as const,
+      permissionScope: "workspace" as const,
+      approvalReviewer: "user" as const,
+      permissionEscalation: "deny" as const,
+      deliveryAuthority: "none" as const,
+      executionCwd: workCwd,
+    };
+    await startCodexThread(
+      topology.runtime,
+      "t1",
+      undefined,
+      options,
+      toolNames.map((name) => ({
+        name,
+        description: name,
+        inputSchema: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+      })),
+    );
+    expect(JSON.parse(readFileSync(probePath, "utf8"))).toMatchObject({
+      cwd: workCwd,
+      home: "/run/bb-codex-home",
+      codexHome: "/run/bb-codex-auth",
+      codexHomeEntries: ["auth.json"],
+      siblingVisible: false,
+      localAddExit: 0,
+      localCommitExit: 0,
+      remotePushExit: 128,
+      ambientIdentity: {
+        GH_TOKEN: null,
+        SSH_AUTH_SOCK: null,
+        AWS_ACCESS_KEY_ID: null,
+        DOCKER_HOST: null,
+        DATABASE_URL: null,
+        CI_JOB_TOKEN: null,
+      },
+    });
+    expect(readFileSync(join(workCwd, "sandbox-local.txt"), "utf8")).toBe(
+      "local commit works\n",
+    );
+    await topology.runtime.runTurn({
+      clientRequestId: "creq_23456789ab",
+      threadId: "t1",
+      input: [promptTextInput({ text: "exercise WT tools" })],
+      options,
+    });
+    await waitForRuntimeState({
+      label: "sandboxed Codex routed WT dynamic tools",
+      predicate: () => toolCalls.length === toolNames.length,
+      timeoutMs: 5_000,
+    });
+    expect(toolCalls).toEqual(toolNames);
+  });
 
   it("runs N codex threads on one bridge process with one app-server child each, and reaps the children on stop, archive, and bridge retirement", async () => {
     const topology = createCodexTopologyRuntime();

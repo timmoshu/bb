@@ -32,6 +32,8 @@ interface CreateCodexAppServerConnectionOptions {
     responder: CodexAppServerRequestResponder,
   ): void;
   onExit(info: CodexAppServerExitInfo): void;
+  inheritedCwdFd?: number;
+  inheritedAuthFd?: number;
 }
 
 interface CodexAppServerRequestArgs<TResult> {
@@ -95,7 +97,17 @@ export function createCodexAppServerConnection(
   const child: ChildProcess = spawn(options.command, options.args, {
     cwd: options.cwd,
     env: options.env,
-    stdio: ["pipe", "pipe", "pipe"],
+    stdio:
+      options.inheritedCwdFd === undefined ||
+      options.inheritedAuthFd === undefined
+        ? ["pipe", "pipe", "pipe"]
+        : [
+            "pipe",
+            "pipe",
+            "pipe",
+            options.inheritedCwdFd,
+            options.inheritedAuthFd,
+          ],
   });
   experimental_recordProviderChildIo(child, {
     threadId: options.recordThreadId,
@@ -146,6 +158,7 @@ export function createCodexAppServerConnection(
     stdoutLines?.close();
     child.stdout?.destroy();
     child.stderr?.destroy();
+
     const stderrTail = stderrChunks.join("\n");
     rejectAllPending(
       new CodexAppServerExitedError(

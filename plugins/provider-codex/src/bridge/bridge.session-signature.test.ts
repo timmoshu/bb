@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -111,4 +111,41 @@ it("keeps an auto-reviewed session when only escalation intent changes", async (
   expect(
     harness.messages.filter((message) => message.method === "session/replaced"),
   ).toEqual([]);
+}, 30_000);
+
+it("rebuilds a Git-authority child before applying none authority and a new cwd", async () => {
+  const workCwd = join(workspaceDir, "work");
+  const codexHome = join(workspaceDir, "codex-home");
+  mkdirSync(workCwd);
+  mkdirSync(codexHome);
+  writeFileSync(join(codexHome, "auth.json"), "{}");
+  vi.stubEnv("CODEX_HOME", codexHome);
+  harness.sendRequest(1, "thread/start", {
+    threadId: THREAD_ID,
+    cwd: workspaceDir,
+    instructionMode: "append",
+    options: sessionOptions,
+  });
+  const started = await harness.waitForResponse(1);
+  const providerThreadId = (started.result as { providerThreadId: string })
+    .providerThreadId;
+
+  harness.sendRequest(2, "turn/start", {
+    threadId: THREAD_ID,
+    providerThreadId,
+    clientRequestId: "creq_23456789ac",
+    input: [{ type: "text", text: "apply guarded cwd", mentions: [] }],
+    options: {
+      ...sessionOptions,
+      deliveryAuthority: "none",
+      executionCwd: workCwd,
+      executionEnvironmentCwd: workspaceDir,
+      workTogetherWorkCwdRoot: workspaceDir,
+    },
+  });
+  const turn = await harness.waitForResponse(2);
+  expect(turn.error).toBeUndefined();
+  expect(
+    harness.messages.filter((message) => message.method === "session/replaced"),
+  ).toHaveLength(1);
 }, 30_000);

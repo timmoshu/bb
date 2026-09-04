@@ -47,6 +47,7 @@ import {
   type ProviderRecoveryHint,
 } from "@get-bb/plugin-sdk/provider-bridge";
 import { z } from "zod";
+import { closeSync, constants, openSync, realpathSync } from "node:fs";
 import {
   CODEX_MACOS_PERMISSION_EXTENSION_KIND,
   summarizeCodexMacOsPermissions,
@@ -82,6 +83,7 @@ import {
   type CodexAppServerExitInfo,
   type CodexAppServerRequestResponder,
 } from "./app-server-connection.js";
+import { planCodexAppServerLaunch } from "./sandbox-launch.js";
 import {
   getCodexProviderHealth,
   getCodexProviderInstallationRun,
@@ -448,6 +450,10 @@ function constructionSignature(
   const permissionSettings = toCodexThreadPermissionSettings(sessionOptions);
   return JSON.stringify({
     cwd,
+    deliveryAuthority: sessionOptions.deliveryAuthority,
+    executionCwd: sessionOptions.executionCwd ?? null,
+    executionEnvironmentCwd: sessionOptions.executionEnvironmentCwd ?? null,
+    workTogetherWorkCwdRoot: sessionOptions.workTogetherWorkCwdRoot ?? null,
     reasoningLevel: sessionOptions.reasoningLevel ?? null,
     memoryEnabled: sessionOptions.memoryEnabled ?? null,
     providerSubagentsEnabled: sessionOptions.providerSubagentsEnabled ?? null,
@@ -753,24 +759,61 @@ function handleChildExit(
   }
 }
 
-function spawnChildConnection(callbacks: {
-  recordThreadId: string | null;
-  onNotification: (method: string, params: unknown) => void;
-  onRequest: (
-    method: string,
-    params: unknown,
-    responder: CodexAppServerRequestResponder,
-  ) => void;
-  onExit: (info: CodexAppServerExitInfo) => void;
-}): CodexAppServerConnection {
+function spawnChildConnection(
+  callbacks: {
+    recordThreadId: string | null;
+    onNotification: (method: string, params: unknown) => void;
+    onRequest: (
+      method: string,
+      params: unknown,
+      responder: CodexAppServerRequestResponder,
+    ) => void;
+    onExit: (info: CodexAppServerExitInfo) => void;
+  },
+  execution?: { cwd: string; options: BridgeExecutionOptions },
+): CodexAppServerConnection {
   const launch = resolveAppServerLaunch();
-  return createCodexAppServerConnection({
-    command: launch.command,
-    args: launch.args,
-    cwd: process.cwd(),
-    env: buildAppServerEnv(),
-    ...callbacks,
-  });
+  if (execution?.options.deliveryAuthority !== "none") {
+    return createCodexAppServerConnection({
+      command: launch.command,
+      args: launch.args,
+      cwd: process.cwd(),
+      env: buildAppServerEnv(),
+      ...callbacks,
+    });
+  }
+
+  let pinnedCwdFd: number | undefined;
+  let plan: ReturnType<typeof planCodexAppServerLaunch> | undefined;
+  try {
+    pinnedCwdFd = openSync(
+      execution.cwd,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    if (realpathSync(`/proc/self/fd/${pinnedCwdFd}`) !== execution.cwd) {
+      throw new Error("cwd changed");
+    }
+    plan = planCodexAppServerLaunch({
+      deliveryAuthority: "none",
+      command: launch.command,
+      args: launch.args,
+      cwd: execution.cwd,
+      env: buildAppServerEnv(),
+      executionEnvironmentCwd: execution.options.executionEnvironmentCwd,
+      workTogetherWorkCwdRoot: execution.options.workTogetherWorkCwdRoot,
+      cwdBindSource: "/proc/self/fd/3",
+      cwdValidationSource: `/proc/self/fd/${pinnedCwdFd}`,
+    });
+    return createCodexAppServerConnection({
+      ...plan,
+      inheritedCwdFd: pinnedCwdFd,
+      inheritedAuthFd: plan.inheritedAuthFd,
+      ...callbacks,
+    });
+  } finally {
+    plan?.cleanup();
+    if (pinnedCwdFd !== undefined) closeSync(pinnedCwdFd);
+  }
 }
 
 const ignoredChildResultSchema = z.unknown();
@@ -891,14 +934,17 @@ async function constructThreadSession(
   }
   sendThreadDeltas(session, [{ kind: "session.reset" }]);
 
-  const connection = spawnChildConnection({
-    recordThreadId: args.threadId,
-    onNotification: (method, params) =>
-      handleChildNotification(args.threadId, serial, method, params),
-    onRequest: (method, params, responder) =>
-      handleChildRequest(args.threadId, serial, method, params, responder),
-    onExit: (info) => handleChildExit(args.threadId, serial, info),
-  });
+  const connection = spawnChildConnection(
+    {
+      recordThreadId: args.threadId,
+      onNotification: (method, params) =>
+        handleChildNotification(args.threadId, serial, method, params),
+      onRequest: (method, params, responder) =>
+        handleChildRequest(args.threadId, serial, method, params, responder),
+      onExit: (info) => handleChildExit(args.threadId, serial, info),
+    },
+    { cwd: args.cwd, options: args.options },
+  );
   session.connection = connection;
 
   try {
@@ -1038,10 +1084,14 @@ async function rebuildThreadSession(
     );
   }
   let replacement: ConstructedCodexSession;
+  const cwd =
+    options.deliveryAuthority === "none"
+      ? (options.executionCwd ?? session.construction.cwd)
+      : session.construction.cwd;
   try {
     replacement = await constructThreadSession({
       threadId: session.bbThreadId,
-      cwd: session.construction.cwd,
+      cwd,
       options,
       instructionMode: session.construction.instructionMode,
       ...(session.construction.dynamicTools !== undefined
@@ -1263,10 +1313,11 @@ async function requireLiveSessionForTurn(
   }
 
   const decoded = decodeCodexOptions(params.options);
-  const signature = constructionSignature(
-    session.construction.cwd,
-    decoded.sessionOptions,
-  );
+  const cwd =
+    decoded.sessionOptions.deliveryAuthority === "none"
+      ? (decoded.sessionOptions.executionCwd ?? session.construction.cwd)
+      : session.construction.cwd;
+  const signature = constructionSignature(cwd, decoded.sessionOptions);
   if (session.connection === null || session.connection.exited) {
     session = await rebuildThreadSession(
       session,

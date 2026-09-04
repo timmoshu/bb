@@ -28,6 +28,10 @@ export type CodexSessionOptions = {
   providerSubagentsEnabled?: boolean;
   instructions?: string;
   envVars?: Record<string, string>;
+  deliveryAuthority: "git" | "none";
+  executionCwd?: string;
+  executionEnvironmentCwd?: string;
+  workTogetherWorkCwdRoot?: string;
 } & RuntimePermissionPolicy;
 
 interface CodexPermissionSettings {
@@ -155,11 +159,12 @@ export function resolveCodexInstructionOverrides(
 
 function toWorkspaceWriteCodexSandboxPolicy(
   writableRoots: readonly string[],
+  networkAccess: boolean,
 ): SandboxPolicy {
   return {
     type: "workspaceWrite",
     writableRoots: [...writableRoots],
-    networkAccess: true,
+    networkAccess,
     excludeTmpdirEnvVar: false,
     excludeSlashTmp: false,
   };
@@ -509,6 +514,16 @@ export function toCodexThreadPermissionSettings(
   options: CodexSessionOptions,
 ): CodexThreadPermissionSettings {
   const permissionPolicy = options;
+  if (options.deliveryAuthority === "none") {
+    return {
+      approvalPolicy:
+        permissionPolicy.permissionScope === "full"
+          ? "never"
+          : toWorkspaceApprovalPolicy(permissionPolicy),
+      approvalsReviewer: toCodexApprovalsReviewer(options),
+      sandbox: "workspace-write",
+    };
+  }
   switch (permissionPolicy.permissionScope) {
     case "workspace":
       return {
@@ -529,6 +544,23 @@ export function toCodexPermissionSettings(
   args: ToCodexPermissionSettingsArgs,
 ): CodexPermissionSettings {
   const permissionPolicy = args.options;
+  if (args.options.deliveryAuthority === "none") {
+    return {
+      approvalPolicy:
+        permissionPolicy.permissionScope === "full"
+          ? "never"
+          : toWorkspaceApprovalPolicy(permissionPolicy),
+      approvalsReviewer: toCodexApprovalsReviewer(args.options),
+      sandbox: "workspace-write",
+      sandboxPolicy: toWorkspaceWriteCodexSandboxPolicy(
+        combineWorkspaceWriteRoots(
+          args.gitWritableRoots,
+          args.additionalWorkspaceWriteRoots,
+        ),
+        false,
+      ),
+    };
+  }
   switch (permissionPolicy.permissionScope) {
     case "workspace":
       return {
@@ -540,6 +572,7 @@ export function toCodexPermissionSettings(
             args.gitWritableRoots,
             args.additionalWorkspaceWriteRoots,
           ),
+          true,
         ),
       };
     case "full":

@@ -24,13 +24,17 @@ import {
 } from "./session-params.js";
 import type { CodexSessionOptions } from "./session-params.js";
 
+type CodexPermissionOptions = RuntimePermissionPolicy & {
+  deliveryAuthority: "git" | "none";
+};
+
 const WORKSPACE_ASK_OPTIONS = {
   permissionMode: "accept-edits",
   permissionScope: "workspace",
   approvalReviewer: "user",
   permissionEscalation: "ask",
   deliveryAuthority: "git",
-} satisfies RuntimePermissionPolicy;
+} satisfies CodexPermissionOptions;
 
 const WORKSPACE_DENY_OPTIONS = {
   permissionMode: "accept-edits",
@@ -38,7 +42,7 @@ const WORKSPACE_DENY_OPTIONS = {
   approvalReviewer: "user",
   permissionEscalation: "deny",
   deliveryAuthority: "git",
-} satisfies RuntimePermissionPolicy;
+} satisfies CodexPermissionOptions;
 
 const AUTO_ASK_OPTIONS = {
   permissionMode: "auto",
@@ -46,7 +50,7 @@ const AUTO_ASK_OPTIONS = {
   approvalReviewer: "automatic",
   permissionEscalation: "ask",
   deliveryAuthority: "git",
-} satisfies RuntimePermissionPolicy;
+} satisfies CodexPermissionOptions;
 
 const AUTO_DENY_OPTIONS = {
   permissionMode: "auto",
@@ -54,7 +58,7 @@ const AUTO_DENY_OPTIONS = {
   approvalReviewer: "automatic",
   permissionEscalation: "deny",
   deliveryAuthority: "git",
-} satisfies RuntimePermissionPolicy;
+} satisfies CodexPermissionOptions;
 
 const FULL_OPTIONS = {
   permissionMode: "full",
@@ -62,7 +66,17 @@ const FULL_OPTIONS = {
   approvalReviewer: null,
   permissionEscalation: null,
   deliveryAuthority: "git",
-} satisfies RuntimePermissionPolicy;
+} satisfies CodexPermissionOptions;
+
+const NONE_WORKSPACE_OPTIONS = {
+  ...WORKSPACE_DENY_OPTIONS,
+  deliveryAuthority: "none",
+} satisfies CodexPermissionOptions;
+
+const NONE_FULL_OPTIONS = {
+  ...FULL_OPTIONS,
+  deliveryAuthority: "none",
+} satisfies CodexPermissionOptions;
 
 interface LinkedWorktreeFixture {
   cleanup(): void;
@@ -567,6 +581,20 @@ describe("codex permission settings", () => {
         networkAccess: true,
         excludeTmpdirEnvVar: false,
         excludeSlashTmp: false,
+      },
+    });
+  });
+
+  it("structurally denies command network access for none delivery authority", () => {
+    expect(toCodexThreadPermissionSettings(NONE_FULL_OPTIONS)).toMatchObject({
+      approvalPolicy: "never",
+      sandbox: "workspace-write",
+    });
+    expect(permissionSettings(NONE_WORKSPACE_OPTIONS)).toMatchObject({
+      sandbox: "workspace-write",
+      sandboxPolicy: {
+        type: "workspaceWrite",
+        networkAccess: false,
       },
     });
   });

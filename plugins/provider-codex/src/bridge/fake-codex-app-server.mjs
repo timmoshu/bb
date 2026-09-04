@@ -28,10 +28,12 @@ import {
   closeSync,
   existsSync,
   openSync,
+  readdirSync,
   readFileSync,
   writeFileSync,
 } from "node:fs";
 import { createInterface } from "node:readline";
+import { spawnSync } from "node:child_process";
 
 let threadCounter = 0;
 let turnCounter = 0;
@@ -164,6 +166,7 @@ const archivedThreadIds = new Set();
  * see the children die on release, archive, and bridge shutdown.
  */
 const processLogPath = script?.processLogPath ?? null;
+const sandboxProbe = script?.sandboxProbe ?? null;
 /** `startDelayMs`: answer `thread/start` only after this many milliseconds. */
 const startDelayMs = script?.startDelayMs ?? 0;
 
@@ -175,6 +178,32 @@ function logProcessStep(step) {
 }
 
 logProcessStep("spawn");
+if (sandboxProbe !== null) {
+  writeFileSync("sandbox-local.txt", "local commit works\n");
+  const add = spawnSync("/usr/bin/git", ["add", "sandbox-local.txt"]);
+  const commit = spawnSync("/usr/bin/git", [
+    "commit",
+    "-m",
+    "sandbox local commit",
+  ]);
+  const push = spawnSync("/usr/bin/git", ["push", "origin", "HEAD"]);
+  writeFileSync(
+    sandboxProbe.outputPath,
+    JSON.stringify({
+      cwd: process.cwd(),
+      home: process.env.HOME ?? null,
+      codexHome: process.env.CODEX_HOME ?? null,
+      codexHomeEntries: readdirSync(process.env.CODEX_HOME),
+      siblingVisible: existsSync(sandboxProbe.siblingPath),
+      localAddExit: add.status,
+      localCommitExit: commit.status,
+      remotePushExit: push.status,
+      ambientIdentity: Object.fromEntries(
+        sandboxProbe.envKeys.map((key) => [key, process.env[key] ?? null]),
+      ),
+    }),
+  );
+}
 process.on("SIGTERM", () => {
   logProcessStep("exit");
   process.exit(0);

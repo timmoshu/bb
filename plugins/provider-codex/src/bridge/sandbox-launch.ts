@@ -1,0 +1,390 @@
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import type { DeliveryAuthority } from "@bb/domain";
+import { resolveCodexHome } from "../codex-home.js";
+
+export const CODEX_SANDBOX_BWRAP_PATH = "/usr/bin/bwrap";
+const SANDBOX_HOME = "/run/bb-codex-home";
+const SANDBOX_CODEX_HOME = "/run/bb-codex-auth";
+const SANDBOX_CODEX_AUTH = `${SANDBOX_CODEX_HOME}/auth.json`;
+const GIT_AUTHOR_NAME = "WT Room Agent";
+const GIT_AUTHOR_EMAIL = "wt-room@local.invalid";
+
+const ALLOWED_ENV_KEYS = new Set([
+  "PATH",
+  "LANG",
+  "LANGUAGE",
+  "LC_ALL",
+  "TERM",
+  "COLORTERM",
+  "TZ",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "ALL_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  "all_proxy",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "NODE_EXTRA_CA_CERTS",
+]);
+const EMBEDDED_CREDENTIAL_URL = /(?:https?|git):\/\/[^/\s:]+:[^/\s@]+@/i;
+const EMBEDDED_TOKEN_URL = /(?:https?|git):\/\/(?!git@)[^/\s@]+@/i;
+const DANGEROUS_GIT_CONFIG =
+  /^\s*\[(?:credential|http|url|include|includeIf)\b|^\s*(?:helper|extraHeader|insteadOf|sshCommand|askPass)\s*=/im;
+
+export class CodexSandboxLaunchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CodexSandboxLaunchError";
+  }
+}
+
+export interface CodexAppServerLaunchPlan {
+  command: string;
+  args: string[];
+  cwd: string;
+  env: Record<string, string | undefined>;
+  bwrap: boolean;
+  inheritedAuthFd?: number;
+  cleanup(): void;
+}
+
+export interface PlanCodexAppServerLaunchInput {
+  deliveryAuthority: DeliveryAuthority;
+  command: string;
+  args: readonly string[];
+  cwd: string;
+  env: Record<string, string | undefined>;
+  executionEnvironmentCwd?: string;
+  workTogetherWorkCwdRoot?: string;
+  hostHome?: string;
+  bwrapPath?: string;
+  platform?: NodeJS.Platform;
+  cwdBindSource?: string;
+  cwdValidationSource?: string;
+}
+
+function lstatIfPresent(target: string) {
+  try {
+    return lstatSync(target);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function pathInside(root: string, candidate: string): boolean {
+  const part = relative(resolve(root), resolve(candidate));
+  return (
+    part === "" ||
+    (!part.startsWith(`..${sep}`) && part !== ".." && !isAbsolute(part))
+  );
+}
+
+function canonicalDirectory(candidate: string, hostHome: string): string {
+  try {
+    const target = resolve(candidate);
+    if (target !== candidate || target === sep || target === hostHome)
+      throw new Error("forbidden");
+    let current: string = sep;
+    for (const segment of target.slice(sep.length).split(sep).filter(Boolean)) {
+      current = join(current, segment);
+      if (!existsSync(current) || lstatSync(current).isSymbolicLink())
+        throw new Error("invalid");
+    }
+    if (!lstatSync(target).isDirectory() || realpathSync(target) !== target)
+      throw new Error("invalid");
+    return target;
+  } catch {
+    throw new CodexSandboxLaunchError("Codex sandbox rejected execution cwd");
+  }
+}
+
+function resolveExecutable(
+  command: string,
+  env: Record<string, string | undefined>,
+): string {
+  if (command.includes("/") || isAbsolute(command)) {
+    const target = resolve(command);
+    if (!existsSync(target) || !statSync(target).isFile()) {
+      throw new CodexSandboxLaunchError(
+        "Codex sandbox cannot resolve app-server executable",
+      );
+    }
+    return realpathSync(target);
+  }
+  for (const entry of (env.PATH ?? "").split(":").filter(Boolean)) {
+    const candidate = join(entry, command);
+    if (existsSync(candidate) && statSync(candidate).isFile())
+      return realpathSync(candidate);
+  }
+  throw new CodexSandboxLaunchError(
+    "Codex sandbox cannot resolve app-server executable",
+  );
+}
+
+function codexExecutableClosure(
+  executable: string,
+  hostHome: string,
+): string | null {
+  if (executable === realpathSync(process.execPath)) return executable;
+  if (!pathInside(hostHome, executable)) {
+    throw new CodexSandboxLaunchError(
+      "Codex sandbox cannot admit executable closure",
+    );
+  }
+  const standaloneReleases = join(
+    hostHome,
+    ".codex",
+    "packages",
+    "standalone",
+    "releases",
+  );
+  if (pathInside(standaloneReleases, executable)) {
+    const release = relative(standaloneReleases, executable).split(sep)[0];
+    if (!release)
+      throw new CodexSandboxLaunchError("Codex sandbox rejected executable");
+    const root = join(standaloneReleases, release);
+    if (!statSync(root).isDirectory() || realpathSync(root) !== root) {
+      throw new CodexSandboxLaunchError(
+        "Codex sandbox rejected executable closure",
+      );
+    }
+    return root;
+  }
+  let current = dirname(executable);
+  while (current !== hostHome && pathInside(hostHome, current)) {
+    const manifest = join(current, "package.json");
+    if (existsSync(manifest)) {
+      try {
+        const name = (
+          JSON.parse(readFileSync(manifest, "utf8")) as { name?: unknown }
+        ).name;
+        if (name === "@openai/codex") return realpathSync(current);
+      } catch {
+        throw new CodexSandboxLaunchError(
+          "Codex sandbox rejected executable manifest",
+        );
+      }
+    }
+    current = dirname(current);
+  }
+  throw new CodexSandboxLaunchError(
+    "Codex sandbox cannot admit executable closure",
+  );
+}
+
+function assertSafeLocalGit(cwd: string): void {
+  const dotGit = join(cwd, ".git");
+  const info = lstatIfPresent(dotGit);
+  if (info === undefined) return;
+  if (!info.isDirectory() || info.isSymbolicLink()) {
+    throw new CodexSandboxLaunchError(
+      "Codex sandbox requires Git metadata inside the admitted cwd",
+    );
+  }
+  const configPath = join(dotGit, "config");
+  if (lstatIfPresent(join(dotGit, "commondir")) !== undefined) {
+    throw new CodexSandboxLaunchError(
+      "Codex sandbox rejected external common Git metadata",
+    );
+  }
+  const configInfo = lstatIfPresent(configPath);
+  if (configInfo === undefined) return;
+  if (!configInfo.isFile() || configInfo.isSymbolicLink()) {
+    throw new CodexSandboxLaunchError("Codex sandbox rejected Git config");
+  }
+  const value = readFileSync(configPath, "utf8");
+  if (
+    EMBEDDED_CREDENTIAL_URL.test(value) ||
+    EMBEDDED_TOKEN_URL.test(value) ||
+    DANGEROUS_GIT_CONFIG.test(value)
+  ) {
+    throw new CodexSandboxLaunchError(
+      "Codex sandbox rejected credential-capable Git config",
+    );
+  }
+}
+
+function sanitizeEnv(
+  source: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined && ALLOWED_ENV_KEYS.has(key)) env[key] = value;
+  }
+  return {
+    ...env,
+    HOME: SANDBOX_HOME,
+    CODEX_HOME: SANDBOX_CODEX_HOME,
+    TMPDIR: "/tmp",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_AUTHOR_NAME,
+    GIT_AUTHOR_EMAIL,
+    GIT_COMMITTER_NAME: GIT_AUTHOR_NAME,
+    GIT_COMMITTER_EMAIL: GIT_AUTHOR_EMAIL,
+  };
+}
+
+function ancestorDirectories(
+  target: string,
+  maskedRoots: readonly string[],
+): string[] {
+  const parent = dirname(resolve(target));
+  const result: string[] = [];
+  for (const root of maskedRoots) {
+    if (!pathInside(root, parent)) continue;
+    let current = parent;
+    while (current !== root && current.startsWith(root + sep)) {
+      result.push(current);
+      current = dirname(current);
+    }
+  }
+  return result;
+}
+
+function openCodexAuth(
+  hostHome: string,
+  env: Record<string, string | undefined>,
+): number {
+  const sourceHome = resolveCodexHome(hostHome, env);
+  const sourceAuth = join(sourceHome, "auth.json");
+  let fd: number | undefined;
+  try {
+    fd = openSync(sourceAuth, constants.O_RDONLY | constants.O_NOFOLLOW);
+    if (
+      !fstatSync(fd).isFile() ||
+      realpathSync(`/proc/self/fd/${fd}`) !== sourceAuth
+    )
+      throw new Error("invalid");
+    return fd;
+  } catch {
+    if (fd !== undefined) closeSync(fd);
+    throw new CodexSandboxLaunchError(
+      "Codex sandbox requires a regular auth.json",
+    );
+  }
+}
+
+export function planCodexAppServerLaunch(
+  input: PlanCodexAppServerLaunchInput,
+): CodexAppServerLaunchPlan {
+  if (input.deliveryAuthority === "git") {
+    return {
+      command: input.command,
+      args: [...input.args],
+      cwd: input.cwd,
+      env: { ...input.env },
+      bwrap: false,
+      cleanup() {},
+    };
+  }
+  if ((input.platform ?? process.platform) !== "linux") {
+    throw new CodexSandboxLaunchError("Codex sandbox requires Linux bwrap");
+  }
+  const bwrapPath = input.bwrapPath ?? CODEX_SANDBOX_BWRAP_PATH;
+  if (!existsSync(bwrapPath) || !statSync(bwrapPath).isFile()) {
+    throw new CodexSandboxLaunchError("Codex sandbox helper is unavailable");
+  }
+  const hostHome = resolve(input.hostHome ?? homedir());
+  const cwd = canonicalDirectory(input.cwd, hostHome);
+  if (input.executionEnvironmentCwd === undefined) {
+    throw new CodexSandboxLaunchError("Codex sandbox rejected execution cwd");
+  }
+  const environmentCwd = canonicalDirectory(
+    input.executionEnvironmentCwd,
+    hostHome,
+  );
+  if (cwd !== environmentCwd) {
+    if (input.workTogetherWorkCwdRoot === undefined) {
+      throw new CodexSandboxLaunchError("Codex sandbox rejected execution cwd");
+    }
+    const managedRoot = canonicalDirectory(
+      input.workTogetherWorkCwdRoot,
+      hostHome,
+    );
+    if (cwd === managedRoot || !pathInside(managedRoot, cwd)) {
+      throw new CodexSandboxLaunchError("Codex sandbox rejected execution cwd");
+    }
+  }
+
+  const executable = resolveExecutable(input.command, input.env);
+  const executableClosure = codexExecutableClosure(executable, hostHome);
+  assertSafeLocalGit(input.cwdValidationSource ?? cwd);
+  const authFd = openCodexAuth(hostHome, input.env);
+  try {
+    const maskedRoots = [hostHome, "/tmp", "/run"].map((root) => resolve(root));
+    const rwBinds = new Set([cwd]);
+    const roBinds = new Set<string>();
+    if (executableClosure !== null) roBinds.add(executableClosure);
+    for (const arg of input.args) {
+      if (!isAbsolute(arg) || !existsSync(arg)) continue;
+      const real = realpathSync(arg);
+      if (maskedRoots.some((root) => pathInside(root, real))) roBinds.add(real);
+    }
+    for (const item of rwBinds) roBinds.delete(item);
+    const dirs = new Set([SANDBOX_HOME, SANDBOX_CODEX_HOME]);
+    for (const item of [...rwBinds, ...roBinds]) {
+      for (const dir of ancestorDirectories(item, maskedRoots)) dirs.add(dir);
+    }
+    const args = [
+      "--die-with-parent",
+      "--new-session",
+      "--unshare-pid",
+      "--unshare-uts",
+      "--unshare-ipc",
+      "--ro-bind",
+      "/",
+      "/",
+      "--dev",
+      "/dev",
+      "--proc",
+      "/proc",
+    ];
+    for (const root of maskedRoots) args.push("--tmpfs", root);
+    for (const dir of [...dirs].sort((a, b) => a.length - b.length))
+      args.push("--dir", dir);
+    for (const item of [...roBinds].sort()) args.push("--ro-bind", item, item);
+    for (const item of [...rwBinds].sort()) {
+      args.push(
+        "--bind",
+        item === cwd ? (input.cwdBindSource ?? item) : item,
+        item,
+      );
+    }
+    args.push("--file", "4", SANDBOX_CODEX_AUTH);
+    args.push("--chdir", cwd, "--", executable, ...input.args);
+    return {
+      command: bwrapPath,
+      args,
+      cwd: sep,
+      env: sanitizeEnv(input.env),
+      bwrap: true,
+      inheritedAuthFd: authFd,
+      cleanup() {
+        closeSync(authFd);
+      },
+    };
+  } catch (error) {
+    closeSync(authFd);
+    throw error;
+  }
+}
