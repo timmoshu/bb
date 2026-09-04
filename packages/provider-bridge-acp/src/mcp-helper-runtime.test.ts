@@ -1,5 +1,5 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
@@ -68,5 +68,61 @@ describe("MCP helper runtime", () => {
         bridgeModulePath: fileURLToPath(new URL("./bridge/bridge.ts", import.meta.url)),
       }),
     ).toThrow(AcpSandboxLaunchError);
+  });
+
+  it("uses packageRootHint when the bundled bridge sits outside the release", () => {
+    const outside = mkdtempSync(join(tmpdir(), "wt-mcp-bundled-"));
+    const release = mkdtempSync(join(tmpdir(), "wt-mcp-release-"));
+    scratch.push(outside, release);
+    const bridge = join(outside, "bridge.js");
+    writeFileSync(bridge, "export {}\n");
+    writeFileSync(join(release, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
+    mkdirSync(join(release, "packages", "provider-bridge-acp"), { recursive: true });
+    expect(() =>
+      resolveAcpMcpHelperRuntime({
+        execPath: process.execPath,
+        execArgv: [],
+        bridgeModulePath: bridge,
+      }),
+    ).toThrow(/cannot locate the BB package root/);
+    const helper = resolveAcpMcpHelperRuntime({
+      execPath: process.execPath,
+      execArgv: [],
+      bridgeModulePath: bridge,
+      packageRootHint: release,
+    });
+    expect(helper.roBinds).toContain(realpathSync(release));
+    expect(helper.args).toContain(realpathSync(bridge));
+  });
+
+  it("fails closed on a malformed or too-broad packageRootHint", () => {
+    const outside = mkdtempSync(join(tmpdir(), "wt-mcp-hint-"));
+    scratch.push(outside);
+    const bridge = join(outside, "bridge.js");
+    writeFileSync(bridge, "export {}\n");
+    expect(() =>
+      resolveAcpMcpHelperRuntime({
+        execPath: process.execPath,
+        execArgv: [],
+        bridgeModulePath: bridge,
+        packageRootHint: outside,
+      }),
+    ).toThrow(/not a BB release root/);
+    expect(() =>
+      resolveAcpMcpHelperRuntime({
+        execPath: process.execPath,
+        execArgv: [],
+        bridgeModulePath: bridge,
+        packageRootHint: "/",
+      }),
+    ).toThrow(/too-broad/);
+    expect(() =>
+      resolveAcpMcpHelperRuntime({
+        execPath: process.execPath,
+        execArgv: [],
+        bridgeModulePath: bridge,
+        packageRootHint: homedir(),
+      }),
+    ).toThrow(/too-broad/);
   });
 });

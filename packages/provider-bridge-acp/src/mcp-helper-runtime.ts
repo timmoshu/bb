@@ -1,6 +1,6 @@
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { AcpSandboxLaunchError } from "./sandbox-launch.js";
 
@@ -8,6 +8,7 @@ export interface ResolveAcpMcpHelperRuntimeInput {
   execPath: string;
   execArgv: readonly string[];
   bridgeModulePath: string;
+  packageRootHint?: string;
   resolveSpecifier?: (specifier: string) => string;
   hostHome?: string;
 }
@@ -108,19 +109,45 @@ export function rewriteNodeExecArgvForSandbox(
   return { args, loaderPaths };
 }
 
-export function findBbPackageRoot(startFile: string): string {
-  const hostHome = homedir();
+function hasBbReleaseMarkers(dir: string): boolean {
+  return (
+    existsSync(join(dir, "pnpm-workspace.yaml")) &&
+    existsSync(join(dir, "packages", "provider-bridge-acp"))
+  );
+}
+
+function assertNotTooBroadPackageRoot(dir: string, hostHome: string): void {
+  if (dir === "/" || dir === "/home" || dir === hostHome) {
+    throw new AcpSandboxLaunchError(
+      `ACP sandbox refused to bind a too-broad MCP runtime root: ${dir}`,
+    );
+  }
+}
+
+function resolveHintedPackageRoot(hint: string, hostHome: string): string {
+  const candidate = isAbsolute(hint) ? hint : resolve(hint);
+  if (!existsSync(candidate) || !statSync(candidate).isDirectory()) {
+    throw new AcpSandboxLaunchError(
+      `ACP sandbox MCP packageRootHint is not a directory: ${hint}`,
+    );
+  }
+  const real = realpathSync(candidate);
+  assertNotTooBroadPackageRoot(real, hostHome);
+  if (!hasBbReleaseMarkers(real)) {
+    throw new AcpSandboxLaunchError(
+      `ACP sandbox MCP packageRootHint is not a BB release root: ${real}`,
+    );
+  }
+  return real;
+}
+
+export function findBbPackageRoot(startFile: string, hostHome = homedir()): string {
   let dir = dirname(realpathSync(assertExistingFile("MCP bridge module", startFile)));
   for (;;) {
-    const packageMarker = join(dir, "packages", "provider-bridge-acp");
-    const workspaceMarker = join(dir, "pnpm-workspace.yaml");
-    if (existsSync(packageMarker) && existsSync(workspaceMarker)) {
-      if (dir === hostHome || dir === "/" || dir === "/home") {
-        throw new AcpSandboxLaunchError(
-          `ACP sandbox refused to bind a too-broad MCP runtime root: ${dir}`,
-        );
-      }
-      return realpathSync(dir);
+    if (hasBbReleaseMarkers(dir)) {
+      const real = realpathSync(dir);
+      assertNotTooBroadPackageRoot(real, hostHome);
+      return real;
     }
     const parent = dirname(dir);
     if (parent === dir) {
@@ -130,6 +157,17 @@ export function findBbPackageRoot(startFile: string): string {
     }
     dir = parent;
   }
+}
+
+function resolveBbPackageRoot(
+  bridgeModulePath: string,
+  hint: string | undefined,
+  hostHome: string,
+): string {
+  if (hint !== undefined && hint.length > 0) {
+    return resolveHintedPackageRoot(hint, hostHome);
+  }
+  return findBbPackageRoot(bridgeModulePath, hostHome);
 }
 
 export function resolveAcpMcpHelperRuntime(
@@ -142,9 +180,13 @@ export function resolveAcpMcpHelperRuntime(
     "MCP bridge module",
     input.bridgeModulePath,
   );
-  const packageRoot = findBbPackageRoot(bridgeModulePath);
+  const hostHome = resolve(input.hostHome ?? homedir());
+  const packageRoot = resolveBbPackageRoot(
+    bridgeModulePath,
+    input.packageRootHint,
+    hostHome,
+  );
   const roBinds = new Set<string>([command, packageRoot, ...rewritten.loaderPaths]);
-  const hostHome = input.hostHome ?? homedir();
   if (roBinds.has(hostHome)) {
     throw new AcpSandboxLaunchError("ACP sandbox refused to bind all of HOME read-only");
   }
