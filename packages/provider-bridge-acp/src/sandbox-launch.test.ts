@@ -11,6 +11,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AcpSandboxLaunchError, planAcpAgentLaunch } from "./sandbox-launch.js";
+import {
+  acpSandboxAncestorDirectories,
+  acpSandboxBaseArgs,
+  canonicalAcpSandboxDirectory,
+  isInsideAcpSandboxRoot,
+} from "./sandbox-kernel.js";
 
 const scratch: string[] = [];
 
@@ -24,6 +30,50 @@ afterEach(() => {
   for (const dir of scratch.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+describe("ACP sandbox kernel", () => {
+  it("canonicalizes no-symlink directories and rejects path-prefix escapes", () => {
+    const root = scratchDir("wt-sandbox-kernel-");
+    const hostHome = join(root, "home");
+    const work = join(hostHome, "work");
+    const link = join(root, "linked");
+    mkdirSync(work, { recursive: true });
+    symlinkSync(hostHome, link);
+
+    expect(canonicalAcpSandboxDirectory(work, hostHome)).toBe(work);
+    expect(isInsideAcpSandboxRoot(hostHome, work)).toBe(true);
+    expect(isInsideAcpSandboxRoot(hostHome, `${hostHome}-escape`)).toBe(false);
+    expect(() =>
+      canonicalAcpSandboxDirectory(join(link, "work"), hostHome),
+    ).toThrow(AcpSandboxLaunchError);
+  });
+
+  it("builds masked ancestors and the provider-neutral bwrap base", () => {
+    expect(
+      acpSandboxAncestorDirectories("/home/test/a/b/file", ["/home/test"]),
+    ).toEqual(["/home/test/a", "/home/test/a/b"]);
+    expect(acpSandboxBaseArgs(["/home/test", "/tmp", "/run"])).toEqual([
+      "--die-with-parent",
+      "--new-session",
+      "--unshare-pid",
+      "--unshare-uts",
+      "--unshare-ipc",
+      "--ro-bind",
+      "/",
+      "/",
+      "--dev",
+      "/dev",
+      "--proc",
+      "/proc",
+      "--tmpfs",
+      "/home/test",
+      "--tmpfs",
+      "/tmp",
+      "--tmpfs",
+      "/run",
+    ]);
+  });
 });
 
 function writeTree(root: string, files: Record<string, string>): void {

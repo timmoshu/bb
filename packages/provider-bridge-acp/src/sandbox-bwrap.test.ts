@@ -560,9 +560,7 @@ waitFor('"serverInfo"').then(() => new Promise((resolve) => setTimeout(resolve, 
         hostHome,
         runtimeRoBinds: helper.roBinds,
       });
-      expect(
-        plan.roBinds.some((bind) => bind.endsWith("wt-delivery-authority")),
-      ).toBe(true);
+      expect(plan.roBinds).toEqual(expect.arrayContaining(helper.roBinds));
       const ran = await runPlanAsync(plan);
       const outPath = join(cwd, "mcp-out.json");
       const dumped = existsSync(outPath)

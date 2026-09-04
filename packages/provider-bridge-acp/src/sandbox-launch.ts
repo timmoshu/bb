@@ -6,16 +6,17 @@ import {
   statSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import {
-  dirname,
-  isAbsolute,
-  join,
-  normalize,
-  relative,
-  resolve,
-  sep,
-} from "node:path";
+import { isAbsolute, join, normalize, resolve, sep } from "node:path";
 import type { DeliveryAuthority } from "@bb/domain";
+import {
+  AcpSandboxLaunchError,
+  acpSandboxAncestorDirectories,
+  acpSandboxBaseArgs,
+  canonicalAcpSandboxDirectory,
+  isInsideAcpSandboxRoot,
+} from "./sandbox-kernel.js";
+
+export { AcpSandboxLaunchError } from "./sandbox-kernel.js";
 
 export const ACP_SANDBOX_BWRAP_PATH = "/usr/bin/bwrap";
 
@@ -67,13 +68,6 @@ const REMOVED_ENV_PREFIXES = [
 const EMBEDDED_CREDENTIAL_URL = /(?:https?|git):\/\/[^/\s:]+:[^/\s@]+@/i;
 const EMBEDDED_TOKEN_URL = /(?:https?|git):\/\/(?!git@)[^/\s@]+@/i;
 
-export class AcpSandboxLaunchError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "AcpSandboxLaunchError";
-  }
-}
-
 export interface AcpAgentLaunchPlan {
   command: string;
   args: string[];
@@ -108,65 +102,6 @@ function definedEnv(
     if (value !== undefined) next[key] = value;
   }
   return next;
-}
-
-function pathInside(root: string, candidate: string): boolean {
-  const relativePath = relative(resolve(root), resolve(candidate));
-  return (
-    relativePath === "" ||
-    (!relativePath.startsWith(`..${sep}`) &&
-      relativePath !== ".." &&
-      !isAbsolute(relativePath))
-  );
-}
-
-function canonicalExecutionDirectory(candidate: string, hostHome: string): string {
-  try {
-    const cwd = resolve(candidate);
-    if (cwd !== candidate || cwd === sep || cwd === hostHome) {
-      throw new Error("forbidden");
-    }
-    let current: string = sep;
-    for (const segment of cwd.slice(sep.length).split(sep).filter(Boolean)) {
-      current = join(current, segment);
-      if (!existsSync(current) || lstatSync(current).isSymbolicLink()) {
-        throw new Error("invalid");
-      }
-    }
-    const stats = lstatSync(cwd);
-    if (
-      !stats.isDirectory() ||
-      stats.isSymbolicLink() ||
-      realpathSync(cwd) !== cwd
-    ) {
-      throw new Error("invalid");
-    }
-    return cwd;
-  } catch {
-    throw new AcpSandboxLaunchError("ACP sandbox rejected execution cwd");
-  }
-}
-
-function ancestorDirectories(
-  target: string,
-  maskedRoots: readonly string[],
-): string[] {
-  const resolved = resolve(target);
-  const parent = dirname(resolved);
-  const dirs: string[] = [];
-  for (const root of maskedRoots) {
-    if (!pathInside(root, parent) && resolve(root) !== parent) continue;
-    let current = parent;
-    const rootResolved = resolve(root);
-    while (current !== rootResolved && current.startsWith(rootResolved + sep)) {
-      dirs.push(current);
-      const next = dirname(current);
-      if (next === current) break;
-      current = next;
-    }
-  }
-  dirs.sort((left, right) => left.length - right.length);
-  return [...new Set(dirs)];
 }
 
 function resolveAgentExecutable(
@@ -336,11 +271,11 @@ export function planAcpAgentLaunch(
     );
   }
   const hostHome = resolve(input.hostHome ?? homedir());
-  canonicalExecutionDirectory(cwd, hostHome);
+  canonicalAcpSandboxDirectory(cwd, hostHome);
   if (input.executionEnvironmentCwd === undefined) {
     throw new AcpSandboxLaunchError("ACP sandbox rejected execution cwd");
   }
-  const environmentCwd = canonicalExecutionDirectory(
+  const environmentCwd = canonicalAcpSandboxDirectory(
     input.executionEnvironmentCwd,
     hostHome,
   );
@@ -349,11 +284,11 @@ export function planAcpAgentLaunch(
     if (input.workTogetherWorkCwdRoot === undefined) {
       throw new AcpSandboxLaunchError("ACP sandbox rejected execution cwd");
     }
-    const managedRoot = canonicalExecutionDirectory(
+    const managedRoot = canonicalAcpSandboxDirectory(
       input.workTogetherWorkCwdRoot,
       hostHome,
     );
-    if (!pathInside(managedRoot, cwd) || managedRoot === cwd) {
+    if (!isInsideAcpSandboxRoot(managedRoot, cwd) || managedRoot === cwd) {
       throw new AcpSandboxLaunchError("ACP sandbox rejected execution cwd");
     }
   }
@@ -364,11 +299,14 @@ export function planAcpAgentLaunch(
     cwd,
     ...(managedExecution ? [] : gitBindPaths(cwd)),
   ]);
-  if (existsSync(grokHome) && pathInside(grokHome, executable)) {
+  if (existsSync(grokHome) && isInsideAcpSandboxRoot(grokHome, executable)) {
     rwBinds.add(grokHome);
   }
   const roBinds = new Set<string>();
-  if (pathInside(hostHome, executable) || pathInside("/tmp", executable)) {
+  if (
+    isInsideAcpSandboxRoot(hostHome, executable) ||
+    isInsideAcpSandboxRoot("/tmp", executable)
+  ) {
     roBinds.add(executable);
   }
   for (const path of input.runtimeRoBinds ?? []) {
@@ -394,28 +332,12 @@ export function planAcpAgentLaunch(
   );
   const dirs = new Set<string>();
   for (const bind of [...rwBinds, ...roBinds]) {
-    for (const dir of ancestorDirectories(bind, maskedRoots)) {
+    for (const dir of acpSandboxAncestorDirectories(bind, maskedRoots)) {
       dirs.add(dir);
     }
   }
 
-  const bwrapArgs: string[] = [
-    "--die-with-parent",
-    "--new-session",
-    "--unshare-pid",
-    "--unshare-uts",
-    "--unshare-ipc",
-    "--ro-bind",
-    "/",
-    "/",
-    "--dev",
-    "/dev",
-    "--proc",
-    "/proc",
-  ];
-  for (const root of maskedRoots) {
-    bwrapArgs.push("--tmpfs", root);
-  }
+  const bwrapArgs = acpSandboxBaseArgs(maskedRoots);
   for (const dir of [...dirs].sort(
     (left, right) => left.length - right.length,
   )) {

@@ -13,6 +13,15 @@ import {
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { resolveCodexHome } from "../codex-home.js";
+import {
+  CodexSandboxLaunchError,
+  canonicalCodexSandboxDirectory,
+  codexSandboxAncestorDirectories,
+  codexSandboxBaseArgs,
+  isInsideCodexSandboxRoot,
+} from "./sandbox-kernel.js";
+
+export { CodexSandboxLaunchError } from "./sandbox-kernel.js";
 
 type CodexDeliveryAuthority = "git" | "none";
 
@@ -39,13 +48,6 @@ const EMBEDDED_CREDENTIAL_URL = /(?:https?|git):\/\/[^/\s:]+:[^/\s@]+@/i;
 const EMBEDDED_TOKEN_URL = /(?:https?|git):\/\/(?!git@)[^/\s@]+@/i;
 const DANGEROUS_GIT_CONFIG =
   /^\s*\[(?:credential|http|url|include|includeIf|protocol)\b|^\s*(?:helper|extraHeader|insteadOf|sshCommand|askPass|hooksPath|gitProxy|fsmonitor|receivepack|uploadpack)\s*=/im;
-
-export class CodexSandboxLaunchError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "CodexSandboxLaunchError";
-  }
-}
 
 export interface CodexAppServerLaunchPlan {
   command: string;
@@ -81,33 +83,6 @@ function lstatIfPresent(target: string) {
       return undefined;
     }
     throw error;
-  }
-}
-
-function pathInside(root: string, candidate: string): boolean {
-  const part = relative(resolve(root), resolve(candidate));
-  return (
-    part === "" ||
-    (!part.startsWith(`..${sep}`) && part !== ".." && !isAbsolute(part))
-  );
-}
-
-function canonicalDirectory(candidate: string, hostHome: string): string {
-  try {
-    const target = resolve(candidate);
-    if (target !== candidate || target === sep || target === hostHome)
-      throw new Error("forbidden");
-    let current: string = sep;
-    for (const segment of target.slice(sep.length).split(sep).filter(Boolean)) {
-      current = join(current, segment);
-      if (!existsSync(current) || lstatSync(current).isSymbolicLink())
-        throw new Error("invalid");
-    }
-    if (!lstatSync(target).isDirectory() || realpathSync(target) !== target)
-      throw new Error("invalid");
-    return target;
-  } catch {
-    throw new CodexSandboxLaunchError("Codex sandbox rejected execution cwd");
   }
 }
 
@@ -147,7 +122,7 @@ function codexExecutableClosure(
     }
     return executable;
   }
-  if (!pathInside(hostHome, executable)) {
+  if (!isInsideCodexSandboxRoot(hostHome, executable)) {
     throw new CodexSandboxLaunchError(
       "Codex sandbox cannot admit executable closure",
     );
@@ -159,7 +134,7 @@ function codexExecutableClosure(
     "standalone",
     "releases",
   );
-  if (pathInside(standaloneReleases, executable)) {
+  if (isInsideCodexSandboxRoot(standaloneReleases, executable)) {
     const release = relative(standaloneReleases, executable).split(sep)[0];
     if (!release)
       throw new CodexSandboxLaunchError("Codex sandbox rejected executable");
@@ -172,7 +147,7 @@ function codexExecutableClosure(
     return root;
   }
   let current = dirname(executable);
-  while (current !== hostHome && pathInside(hostHome, current)) {
+  while (current !== hostHome && isInsideCodexSandboxRoot(hostHome, current)) {
     const manifest = join(current, "package.json");
     if (existsSync(manifest)) {
       try {
@@ -262,23 +237,6 @@ function sanitizeEnv(
   };
 }
 
-function ancestorDirectories(
-  target: string,
-  maskedRoots: readonly string[],
-): string[] {
-  const parent = dirname(resolve(target));
-  const result: string[] = [];
-  for (const root of maskedRoots) {
-    if (!pathInside(root, parent)) continue;
-    let current = parent;
-    while (current !== root && current.startsWith(root + sep)) {
-      result.push(current);
-      current = dirname(current);
-    }
-  }
-  return result;
-}
-
 function openCodexAuth(
   hostHome: string,
   env: Record<string, string | undefined>,
@@ -323,11 +281,11 @@ export function planCodexAppServerLaunch(
     throw new CodexSandboxLaunchError("Codex sandbox helper is unavailable");
   }
   const hostHome = resolve(input.hostHome ?? homedir());
-  const cwd = canonicalDirectory(input.cwd, hostHome);
+  const cwd = canonicalCodexSandboxDirectory(input.cwd, hostHome);
   if (input.executionEnvironmentCwd === undefined) {
     throw new CodexSandboxLaunchError("Codex sandbox rejected execution cwd");
   }
-  const environmentCwd = canonicalDirectory(
+  const environmentCwd = canonicalCodexSandboxDirectory(
     input.executionEnvironmentCwd,
     hostHome,
   );
@@ -335,11 +293,11 @@ export function planCodexAppServerLaunch(
     if (input.workTogetherWorkCwdRoot === undefined) {
       throw new CodexSandboxLaunchError("Codex sandbox rejected execution cwd");
     }
-    const managedRoot = canonicalDirectory(
+    const managedRoot = canonicalCodexSandboxDirectory(
       input.workTogetherWorkCwdRoot,
       hostHome,
     );
-    if (cwd === managedRoot || !pathInside(managedRoot, cwd)) {
+    if (cwd === managedRoot || !isInsideCodexSandboxRoot(managedRoot, cwd)) {
       throw new CodexSandboxLaunchError("Codex sandbox rejected execution cwd");
     }
   }
@@ -360,28 +318,18 @@ export function planCodexAppServerLaunch(
     for (const arg of input.args) {
       if (!isAbsolute(arg) || !existsSync(arg)) continue;
       const real = realpathSync(arg);
-      if (maskedRoots.some((root) => pathInside(root, real))) roBinds.add(real);
+      if (maskedRoots.some((root) => isInsideCodexSandboxRoot(root, real))) {
+        roBinds.add(real);
+      }
     }
     for (const item of rwBinds) roBinds.delete(item);
     const dirs = new Set([SANDBOX_HOME, SANDBOX_CODEX_HOME]);
     for (const item of [...rwBinds, ...roBinds]) {
-      for (const dir of ancestorDirectories(item, maskedRoots)) dirs.add(dir);
+      for (const dir of codexSandboxAncestorDirectories(item, maskedRoots)) {
+        dirs.add(dir);
+      }
     }
-    const args = [
-      "--die-with-parent",
-      "--new-session",
-      "--unshare-pid",
-      "--unshare-uts",
-      "--unshare-ipc",
-      "--ro-bind",
-      "/",
-      "/",
-      "--dev",
-      "/dev",
-      "--proc",
-      "/proc",
-    ];
-    for (const root of maskedRoots) args.push("--tmpfs", root);
+    const args = codexSandboxBaseArgs(maskedRoots);
     for (const dir of [...dirs].sort((a, b) => a.length - b.length))
       args.push("--dir", dir);
     for (const item of [...roBinds].sort()) args.push("--ro-bind", item, item);

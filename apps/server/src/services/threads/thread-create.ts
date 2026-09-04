@@ -65,7 +65,7 @@ import type {
 } from "./thread-provisioning-context.js";
 import { resolveManagedDefaultBaseBranchSpec } from "../projects/worktree-base-branch.js";
 import { applyLoggedEnvironmentLifecycleEvent } from "../environments/lifecycle-outcome.js";
-import { resolveSystemProviderModels } from "../system/execution-options.js";
+import { resolveProviderDefaultModel } from "./provider-default-model.js";
 
 type ThreadCreateDeps = LoggedPendingInteractionWorkSessionDeps;
 
@@ -119,35 +119,14 @@ async function resolveCatalogExecutionDefaults(
     return args.executionDefaults;
   }
 
-  const catalog = await resolveSystemProviderModels(deps, {
+  const defaultModel = await resolveProviderDefaultModel(deps, {
     ...(args.cwd !== undefined ? { cwd: args.cwd } : {}),
     hostId: args.hostId,
     providerId: args.providerId,
   });
-  if (catalog.modelLoadError !== null) {
-    throw new ApiError(
-      503,
-      "model_catalog_unavailable",
-      `Unable to load ${args.providerId} models to resolve the default. Try again once the host is connected and the provider is ready.`,
-      {
-        details: catalog.modelLoadError,
-        retryable: true,
-      },
-    );
-  }
-  const defaultModel =
-    catalog.models.find((model) => model.isDefault) ?? catalog.models[0];
-  if (defaultModel === undefined) {
-    throw new ApiError(
-      503,
-      "model_catalog_unavailable",
-      `The ${args.providerId} model catalog is empty, so no default model can be resolved.`,
-      true,
-    );
-  }
   return buildProviderThreadExecutionDefaults(deps.providerRegistry, {
     providerId: args.providerId,
-    model: defaultModel.model,
+    model: defaultModel,
   });
 }
 

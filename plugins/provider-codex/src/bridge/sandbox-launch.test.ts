@@ -13,6 +13,12 @@ import {
   CodexSandboxLaunchError,
   planCodexAppServerLaunch,
 } from "./sandbox-launch.js";
+import {
+  canonicalCodexSandboxDirectory,
+  codexSandboxAncestorDirectories,
+  codexSandboxBaseArgs,
+  isInsideCodexSandboxRoot,
+} from "./sandbox-kernel.js";
 
 const roots: string[] = [];
 
@@ -32,6 +38,52 @@ function authHome(parent: string): string {
 afterEach(() => {
   for (const value of roots.splice(0))
     rmSync(value, { recursive: true, force: true });
+});
+
+describe("Codex sandbox kernel", () => {
+  it("canonicalizes no-symlink directories and rejects path-prefix escapes", () => {
+    const parent = root("kernel");
+    const hostHome = join(parent, "home");
+    const work = join(hostHome, "work");
+    const link = join(parent, "linked");
+    mkdirSync(work, { recursive: true });
+    symlinkSync(hostHome, link);
+
+    expect(canonicalCodexSandboxDirectory(work, hostHome)).toBe(work);
+    expect(isInsideCodexSandboxRoot(hostHome, work)).toBe(true);
+    expect(isInsideCodexSandboxRoot(hostHome, `${hostHome}-escape`)).toBe(
+      false,
+    );
+    expect(() =>
+      canonicalCodexSandboxDirectory(join(link, "work"), hostHome),
+    ).toThrow(CodexSandboxLaunchError);
+  });
+
+  it("builds masked ancestors and the provider-neutral bwrap base", () => {
+    expect(
+      codexSandboxAncestorDirectories("/home/test/a/b/file", ["/home/test"]),
+    ).toEqual(["/home/test/a", "/home/test/a/b"]);
+    expect(codexSandboxBaseArgs(["/home/test", "/tmp", "/run"])).toEqual([
+      "--die-with-parent",
+      "--new-session",
+      "--unshare-pid",
+      "--unshare-uts",
+      "--unshare-ipc",
+      "--ro-bind",
+      "/",
+      "/",
+      "--dev",
+      "/dev",
+      "--proc",
+      "/proc",
+      "--tmpfs",
+      "/home/test",
+      "--tmpfs",
+      "/tmp",
+      "--tmpfs",
+      "/run",
+    ]);
+  });
 });
 
 describe("Codex app-server sandbox launch", () => {

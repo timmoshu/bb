@@ -54,7 +54,7 @@ import {
   requireBridgeLaunchForProviderId,
   resolveBridgeLaunchForProviderId,
 } from "../system/provider-bridge-launch.js";
-import { resolveSystemProviderModels } from "../system/execution-options.js";
+import { resolveProviderDefaultModel } from "./provider-default-model.js";
 
 type ExecutionOptionsRequest = ExistingThreadExecutionInputRequest;
 
@@ -292,23 +292,10 @@ export async function buildExecutionOptions(
           ? resolveEnvironmentHostId(deps, thread.environmentId)
           : args.hostId;
       if (hostId === null) return null;
-      const catalog = await resolveSystemProviderModels(deps, {
+      return resolveProviderDefaultModel(deps, {
         hostId,
         providerId,
       });
-      if (catalog.modelLoadError !== null) {
-        throw new ApiError(
-          503,
-          "model_catalog_unavailable",
-          `Unable to load ${providerId} models to resolve its default.`,
-          { details: catalog.modelLoadError, retryable: true },
-        );
-      }
-      const models = [...catalog.models, ...catalog.selectedOnlyModels];
-      return (
-        (models.find((candidate) => candidate.isDefault) ?? models[0])?.model ??
-        null
-      );
     },
   });
   return plan.resolvedExecution;
