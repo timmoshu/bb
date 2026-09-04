@@ -1,6 +1,7 @@
 import {
   environments,
   events,
+  getThread,
   getWorkTogetherThreadContext,
   threads,
 } from "@bb/db";
@@ -41,7 +42,10 @@ import {
   resolveExistingThreadExecutionPlan,
   type ExistingThreadExecutionInputRequest,
 } from "./thread-execution-plan.js";
-import { clampPermissionModeToHost } from "../hosts/permission-ceiling.js";
+import {
+  clampPermissionModeToHost,
+  resolveEnvironmentHostId,
+} from "../hosts/permission-ceiling.js";
 import type { ProviderRegistryService } from "../providers/provider-registry.js";
 import { resolveProviderPlanCommand } from "../providers/provider-plan-command.js";
 import { workspaceContextFromPath } from "../environments/workspace-command-target.js";
@@ -50,6 +54,7 @@ import {
   requireBridgeLaunchForProviderId,
   resolveBridgeLaunchForProviderId,
 } from "../system/provider-bridge-launch.js";
+import { resolveSystemProviderModels } from "../system/execution-options.js";
 
 type ExecutionOptionsRequest = ExistingThreadExecutionInputRequest;
 
@@ -267,7 +272,7 @@ function toRuntimeExecutionOptions(
 }
 
 export async function buildExecutionOptions(
-  deps: Pick<AppDeps, "db" | "hub" | "providerRegistry">,
+  deps: LoggedWorkSessionDeps,
   request: ExecutionOptionsRequest,
   args: BuildExecutionOptionsArgs,
 ): Promise<ResolvedThreadExecutionOptions> {
@@ -279,6 +284,32 @@ export async function buildExecutionOptions(
     executionSource: "client/turn/requested",
     input: buildExistingThreadExecutionInput(request),
     threadId: args.threadId,
+    resolveProviderDefaultModel: async (providerId) => {
+      const thread = getThread(deps.db, args.threadId);
+      if (!thread) return null;
+      const hostId =
+        args.hostId === undefined
+          ? resolveEnvironmentHostId(deps, thread.environmentId)
+          : args.hostId;
+      if (hostId === null) return null;
+      const catalog = await resolveSystemProviderModels(deps, {
+        hostId,
+        providerId,
+      });
+      if (catalog.modelLoadError !== null) {
+        throw new ApiError(
+          503,
+          "model_catalog_unavailable",
+          `Unable to load ${providerId} models to resolve its default.`,
+          { details: catalog.modelLoadError, retryable: true },
+        );
+      }
+      const models = [...catalog.models, ...catalog.selectedOnlyModels];
+      return (
+        (models.find((candidate) => candidate.isDefault) ?? models[0])?.model ??
+        null
+      );
+    },
   });
   return plan.resolvedExecution;
 }

@@ -19,8 +19,89 @@ import {
   withTestHarness,
   type TestAppHarness,
 } from "../../helpers/test-app.js";
+import { registerProviderHostRpcResponder } from "../../helpers/host-rpc.js";
+import { availableModelFixture } from "../../helpers/available-models.js";
+import { buildExecutionOptions } from "../../../src/services/threads/thread-commands.js";
 
 describe("thread execution plan input sources", () => {
+  it("resolves the selected provider default instead of a different provider's project model", async () => {
+    await withTestHarness(async (harness) => {
+      const { host, session } = seedHostSession(harness.deps, {
+        id: "host-provider-model-pair",
+      });
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+      });
+      upsertProjectExecutionDefaults(harness.deps.db, {
+        projectId: project.id,
+        providerId: "acp-grok",
+        model: "grok-4.6",
+        reasoningLevel: "medium",
+        permissionMode: "auto",
+        serviceTier: "default",
+      });
+      const thread = seedThread(harness.deps, {
+        projectId: project.id,
+        environmentId: environment.id,
+        providerId: "codex",
+      });
+      const responder = registerProviderHostRpcResponder(harness, {
+        hostId: host.id,
+        sessionId: session.id,
+        modelsByProviderId: {
+          codex: {
+            models: [
+              availableModelFixture({ model: "gpt-5.6-sol", isDefault: true }),
+            ],
+            selectedOnlyModels: [],
+          },
+        },
+      });
+
+      const plan = await buildExecutionOptions(
+        harness.deps,
+        {},
+        {
+          hostId: host.id,
+          threadId: thread.id,
+        },
+      );
+      expect(plan.model).toBe("gpt-5.6-sol");
+      expect(
+        responder.requests.filter(
+          (request) => request.command.type === "provider.list_models",
+        ),
+      ).toHaveLength(1);
+
+      upsertProjectExecutionDefaults(harness.deps.db, {
+        projectId: project.id,
+        providerId: "codex",
+        model: "gpt-5.4",
+        reasoningLevel: "medium",
+        permissionMode: "auto",
+        serviceTier: "default",
+      });
+      const sameProvider = await buildExecutionOptions(
+        harness.deps,
+        {},
+        {
+          hostId: host.id,
+          threadId: thread.id,
+        },
+      );
+      expect(sameProvider.model).toBe("gpt-5.4");
+      expect(
+        responder.requests.filter(
+          (request) => request.command.type === "provider.list_models",
+        ),
+      ).toHaveLength(1);
+    });
+  });
+
   it("treats supplied execution fields as explicit when legacy callers omit sources", () => {
     expect(
       buildExistingThreadExecutionInput({

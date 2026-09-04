@@ -57,6 +57,7 @@ interface ResolveExistingThreadExecutionPlanArgs {
   input: ExistingThreadExecutionInput;
   projectDefaults?: ProjectExecutionDefaults | null;
   threadId: string;
+  resolveProviderDefaultModel?: (providerId: string) => Promise<string | null>;
 }
 
 interface ExistingThreadExecutionPlan {
@@ -278,15 +279,16 @@ export async function resolveExistingThreadExecutionPlan(
     parentThread !== null
       ? getLastExecutionOptions(deps, parentThread.id)
       : null;
-  const model = resolveRequiredField<string>([
+  const rememberedModel = resolveRequiredField<string>([
     args.input.model?.value,
     thread.modelOverride ?? undefined,
     lastExecution?.model,
     projectExecution?.model,
   ]);
-  if (!model) {
-    throw createMissingThreadExecutionModelError(args.threadId);
-  }
+  const model =
+    rememberedModel ??
+    (await args.resolveProviderDefaultModel?.(thread.providerId));
+  if (!model) throw createMissingThreadExecutionModelError(args.threadId);
 
   const permissionMode = clampPermissionModeToHost(deps, {
     hostId:

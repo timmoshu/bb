@@ -189,5 +189,7 @@ function resolveFallbackModel(
   const projectDefaults = getProjectExecutionDefaults(deps.db, {
     projectId: thread.projectId,
   });
-  return projectDefaults?.model ?? null;
+  return projectDefaults?.providerId === thread.providerId
+    ? projectDefaults.model
+    : null;
 }

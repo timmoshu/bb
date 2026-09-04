@@ -6,6 +6,7 @@ import {
   listStoredThreadPromptHistoryRows,
   listThreads,
   markThreadDeleted,
+  upsertProjectExecutionDefaults,
 } from "@bb/db";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../src/server.js";
@@ -14,6 +15,9 @@ import {
   workTogetherCoordinationExecution,
 } from "../../src/routes/work-together-coordination.js";
 import { listQueuedThreadCommands } from "../helpers/commands.js";
+import { registerProviderHostRpcResponder } from "../helpers/host-rpc.js";
+import { availableModelFixture } from "../helpers/available-models.js";
+import { buildExecutionOptions } from "../../src/services/threads/thread-commands.js";
 import {
   seedEnvironment,
   seedHostSession,
@@ -297,7 +301,7 @@ describe("work-together coordination thread route", () => {
           providerId: "codex",
           model: "gpt-5.6-sol",
         });
-        const { host } = seedHostSession(harness.deps, {
+        const { host, session } = seedHostSession(harness.deps, {
           id: "host-wt-provider",
         });
         const { project } = seedProjectWithSource(harness.deps, {
@@ -308,6 +312,29 @@ describe("work-together coordination thread route", () => {
           hostId: host.id,
           projectId: project.id,
           path: "/tmp/wt-provider",
+        });
+        upsertProjectExecutionDefaults(harness.deps.db, {
+          projectId: project.id,
+          providerId: "acp-grok",
+          model: "grok-4.6",
+          reasoningLevel: "medium",
+          permissionMode: "auto",
+          serviceTier: "default",
+        });
+        registerProviderHostRpcResponder(harness, {
+          hostId: host.id,
+          sessionId: session.id,
+          modelsByProviderId: {
+            codex: {
+              models: [
+                availableModelFixture({
+                  model: "gpt-5.6-sol",
+                  isDefault: true,
+                }),
+              ],
+              selectedOnlyModels: [],
+            },
+          },
         });
         const request = () =>
           harness.app.request(
@@ -330,6 +357,19 @@ describe("work-together coordination thread route", () => {
         const id = ((await created.json()) as { thread: { id: string } }).thread
           .id;
         expect(getThread(harness.db, id)?.providerId).toBe("codex");
+        expect(getThread(harness.db, id)?.modelOverride).toBeNull();
+        expect(
+          (
+            await buildExecutionOptions(
+              harness.deps,
+              {},
+              {
+                hostId: host.id,
+                threadId: id,
+              },
+            )
+          ).model,
+        ).toBe("gpt-5.6-sol");
         harness.config.workTogetherCoordinationProviderId = "acp-grok";
         harness.config.workTogetherCoordinationModel = "grok-4.6";
         expect((await request()).status).toBe(200);
