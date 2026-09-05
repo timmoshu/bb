@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
 import {
   isStandaloneBuiltinCompactCommand,
   approvalInteractionOutcomeSchema,
@@ -92,6 +93,8 @@ import {
   getCodexProviderInstallationStatus,
   getCodexProviderUsage,
 } from "./provider-maintenance.js";
+
+type BbThreadResumeParams = ThreadResumeParams & { excludeTurns: boolean };
 
 const codexBridgeCommandSchema = z.discriminatedUnion("method", [
   z.object({
@@ -273,6 +276,8 @@ const CODEX_APP_SERVER_ARGS_ENV = "BB_CODEX_BRIDGE_APP_SERVER_ARGS";
 const PACKAGED_FAKE_APP_SERVER = fileURLToPath(
   new URL("./fake-codex-app-server.mjs", import.meta.url),
 );
+const CODEX_POOL_BASE_URL_ENV = "CODEX_OPENAI_BASE_URL";
+const CODEX_POOL_AUTH_TOKEN_ENV = "CODEX_POOL_AUTH_TOKEN";
 
 const CODEX_INITIALIZE_PARAMS = {
   clientInfo: { name: "bb", version: "1.0.0", title: null },
@@ -334,21 +339,67 @@ async function delay(ms: number): Promise<void> {
 const MISSING_CODEX_CLI_GUIDANCE =
   "bb could not find the Codex CLI on this machine. Install Codex (https://developers.openai.com/codex/cli) or put `codex` on PATH, then retry.";
 
-function resolveAppServerLaunch(): { command: string; args: string[] } {
-  const command = process.env[CODEX_APP_SERVER_COMMAND_ENV];
-  if (!command) {
-    return { command: "codex", args: ["app-server"] };
-  }
-  const rawArgs = process.env[CODEX_APP_SERVER_ARGS_ENV];
-  if (!rawArgs) {
-    return { command, args: [] };
-  }
-  return { command, args: z.array(z.string()).parse(JSON.parse(rawArgs)) };
+export function resolveAppServerLaunch(env: NodeJS.ProcessEnv = process.env): {
+  command: string;
+  args: string[];
+} {
+  const command = env[CODEX_APP_SERVER_COMMAND_ENV];
+  const rawArgs = env[CODEX_APP_SERVER_ARGS_ENV];
+  const args = command
+    ? rawArgs
+      ? z.array(z.string()).parse(JSON.parse(rawArgs))
+      : []
+    : ["app-server"];
+  const poolBaseUrl = env[CODEX_POOL_BASE_URL_ENV];
+  const poolToken = env[CODEX_POOL_AUTH_TOKEN_ENV];
+  if (!poolBaseUrl || !poolToken) return { command: command ?? "codex", args };
+  return {
+    command: command ?? "codex",
+    args: [
+      ...args,
+      "-c",
+      `openai_base_url=${JSON.stringify(poolBaseUrl)}`,
+      "-c",
+      'model_provider="bb-account-pool"',
+      "-c",
+      'model_providers.bb-account-pool.name="OpenAI"',
+      "-c",
+      `model_providers.bb-account-pool.base_url=${JSON.stringify(poolBaseUrl)}`,
+      "-c",
+      'model_providers.bb-account-pool.wire_api="responses"',
+      "-c",
+      "model_providers.bb-account-pool.requires_openai_auth=true",
+      "-c",
+      "model_providers.bb-account-pool.supports_websockets=true",
+      "-c",
+      'model_providers.bb-account-pool.env_http_headers.x-bb-account-pool-token="CODEX_POOL_AUTH_TOKEN"',
+    ],
+  };
 }
 
-function buildAppServerEnv(): NodeJS.ProcessEnv {
+function appServerLaunchEnv(
+  envVars: Readonly<Record<string, string>> | undefined,
+): NodeJS.ProcessEnv {
+  const poolBaseUrl = envVars?.[CODEX_POOL_BASE_URL_ENV];
+  const poolAuthToken = envVars?.[CODEX_POOL_AUTH_TOKEN_ENV];
+  return {
+    ...process.env,
+    ...(poolBaseUrl === undefined
+      ? {}
+      : { [CODEX_POOL_BASE_URL_ENV]: poolBaseUrl }),
+    ...(poolAuthToken === undefined
+      ? {}
+      : { [CODEX_POOL_AUTH_TOKEN_ENV]: poolAuthToken }),
+  };
+}
+
+function buildAppServerEnv(
+  envVars: Readonly<Record<string, string>> | undefined,
+): NodeJS.ProcessEnv {
   return withoutBridgeRuntimeEnv(
-    sanitizeInheritedChildProcessEnv({ env: process.env }),
+    sanitizeInheritedChildProcessEnv({
+      env: appServerLaunchEnv(envVars),
+    }),
   );
 }
 
@@ -380,6 +431,8 @@ interface CodexBridgeSession {
   pendingPreIdentityDeltas: ThreadDelta[];
   rebuildBeforeNextTurnReason: string | null;
   closing: boolean;
+  previousChildExit: Promise<void> | null;
+  releasePromise: Promise<void> | null;
 }
 
 const sessionsByBbThreadId = new Map<string, CodexBridgeSession>();
@@ -407,13 +460,26 @@ function currentSession(
   return session;
 }
 
-function releaseSession(session: CodexBridgeSession): void {
+function releaseSession(session: CodexBridgeSession): Promise<void> {
+  if (session.releasePromise !== null) {
+    return session.releasePromise;
+  }
   session.closing = true;
   if (sessionsByBbThreadId.get(session.bbThreadId) === session) {
     sessionsByBbThreadId.delete(session.bbThreadId);
   }
-  session.connection?.kill();
+  const previousChildExit = session.previousChildExit;
+  session.previousChildExit = null;
+  const currentChildExit = session.connection?.kill() ?? Promise.resolve();
   session.connection = null;
+  const releasePromise =
+    previousChildExit === null
+      ? currentChildExit
+      : Promise.all([previousChildExit, currentChildExit]).then(
+          () => undefined,
+        );
+  session.releasePromise = releasePromise;
+  return releasePromise;
 }
 
 const codexProviderOptionsSchema = z
@@ -454,6 +520,8 @@ function constructionSignature(
   sessionOptions: CodexSessionOptions,
 ): string {
   const permissionSettings = toCodexThreadPermissionSettings(sessionOptions);
+  const poolBaseUrl = sessionOptions.envVars?.[CODEX_POOL_BASE_URL_ENV];
+  const poolToken = sessionOptions.envVars?.[CODEX_POOL_AUTH_TOKEN_ENV];
   return JSON.stringify({
     cwd,
     deliveryAuthority: sessionOptions.deliveryAuthority,
@@ -466,6 +534,13 @@ function constructionSignature(
     approvalPolicy: permissionSettings.approvalPolicy,
     approvalsReviewer: permissionSettings.approvalsReviewer,
     sandbox: permissionSettings.sandbox,
+    poolRoute:
+      poolBaseUrl === undefined || poolToken === undefined
+        ? null
+        : {
+            baseUrl: poolBaseUrl,
+            tokenHash: createHash("sha256").update(poolToken).digest("hex"),
+          },
   });
 }
 
@@ -767,6 +842,7 @@ function handleChildExit(
 
 function spawnChildConnection(
   callbacks: {
+    envVars?: Readonly<Record<string, string>>;
     recordThreadId: string | null;
     onNotification: (method: string, params: unknown) => void;
     onRequest: (
@@ -778,14 +854,16 @@ function spawnChildConnection(
   },
   execution?: { cwd: string; options: BridgeExecutionOptions },
 ): CodexAppServerConnection {
-  const launch = resolveAppServerLaunch();
+  const env = buildAppServerEnv(callbacks.envVars);
+  const launch = resolveAppServerLaunch(appServerLaunchEnv(callbacks.envVars));
+  const { envVars: _envVars, ...connectionCallbacks } = callbacks;
   if (execution?.options.deliveryAuthority !== "none") {
     return createCodexAppServerConnection({
       command: launch.command,
       args: launch.args,
       cwd: process.cwd(),
-      env: buildAppServerEnv(),
-      ...callbacks,
+      env,
+      ...connectionCallbacks,
     });
   }
 
@@ -804,7 +882,7 @@ function spawnChildConnection(
       command: launch.command,
       args: launch.args,
       cwd: execution.cwd,
-      env: buildAppServerEnv(),
+      env,
       executionEnvironmentCwd: execution.options.executionEnvironmentCwd,
       workTogetherWorkCwdRoot: execution.options.workTogetherWorkCwdRoot,
       cwdBindSource: "/proc/self/fd/3",
@@ -819,7 +897,7 @@ function spawnChildConnection(
       ...plan,
       inheritedCwdFd: pinnedCwdFd,
       inheritedAuthFd: plan.inheritedAuthFd,
-      ...callbacks,
+      ...connectionCallbacks,
     });
   } finally {
     plan?.cleanup();
@@ -911,10 +989,6 @@ async function constructThreadSession(
   args: ConstructThreadSessionArgs,
 ): Promise<ConstructedCodexSession> {
   const existing = sessionsByBbThreadId.get(args.threadId);
-  if (existing) {
-    releaseSession(existing);
-  }
-
   const decoded = decodeCodexOptions(args.options);
   sessionSerialCounter += 1;
   const serial = sessionSerialCounter;
@@ -952,8 +1026,25 @@ async function constructThreadSession(
     pendingPreIdentityDeltas: [],
     rebuildBeforeNextTurnReason: null,
     closing: false,
+    previousChildExit: null,
+    releasePromise: null,
   };
   sessionsByBbThreadId.set(args.threadId, session);
+  if (existing) {
+    const previousChildExit = releaseSession(existing);
+    session.previousChildExit = previousChildExit;
+    await previousChildExit;
+    if (session.previousChildExit === previousChildExit) {
+      session.previousChildExit = null;
+    }
+    if (session.closing) {
+      throw new CodexSessionReleasedError(
+        new Error(
+          "codex session was released while waiting for the previous app-server to exit",
+        ),
+      );
+    }
+  }
   if (args.request.kind === "resume") {
     announceSessionIdentity(session, args.request.providerThreadId);
   }
@@ -961,6 +1052,7 @@ async function constructThreadSession(
 
   const connection = spawnChildConnection(
     {
+      envVars: decoded.sessionOptions.envVars,
       recordThreadId: args.threadId,
       onNotification: (method, params) =>
         handleChildNotification(args.threadId, serial, method, params),
@@ -1000,7 +1092,7 @@ async function constructThreadSession(
     };
 
     let method: string;
-    let params: BbThreadStartParams | ThreadResumeParams | BbThreadForkParams;
+    let params: BbThreadStartParams | BbThreadResumeParams | BbThreadForkParams;
     switch (args.request.kind) {
       case "start": {
         method = "thread/start";
@@ -1014,8 +1106,9 @@ async function constructThreadSession(
       }
       case "resume": {
         method = "thread/resume";
-        const resumeParams: ThreadResumeParams = {
+        const resumeParams: BbThreadResumeParams = {
           threadId: args.request.providerThreadId,
+          excludeTurns: true,
           ...sharedConstructionParams,
         };
         params = resumeParams;
@@ -1083,7 +1176,7 @@ async function constructThreadSession(
       sessionsByBbThreadId.delete(args.threadId);
     }
     session.closing = true;
-    connection.kill();
+    await connection.kill();
     throw released ? new CodexSessionReleasedError(error) : error;
   }
 }
@@ -1118,6 +1211,8 @@ function registerResumableSession(session: CodexBridgeSession): void {
     pendingPreIdentityDeltas: [],
     rebuildBeforeNextTurnReason: null,
     closing: false,
+    previousChildExit: null,
+    releasePromise: null,
   });
 }
 
@@ -1183,7 +1278,7 @@ async function withMaintenanceChild<T>(
     return await fn(connection);
   } finally {
     maintenanceConnections.delete(connection);
-    connection.kill();
+    await connection.kill();
   }
 }
 
@@ -1219,7 +1314,7 @@ async function getModelListConnection(): Promise<CodexAppServerConnection> {
       return connection;
     } catch (error) {
       maintenanceConnections.delete(connection);
-      connection.kill();
+      await connection.kill();
       throw error;
     }
   })();
@@ -1553,7 +1648,7 @@ async function handleThreadStop(
 
   if (params.intent === "release") {
     if (session) {
-      releaseSession(session);
+      await releaseSession(session);
     }
     sendResult(id, { ok: true });
     return;
@@ -1609,7 +1704,7 @@ async function handleThreadStop(
       providerThreadId: session.codexThreadId,
     }),
   );
-  releaseSession(session);
+  await releaseSession(session);
   sendResult(id, { ok: true });
 }
 
@@ -1657,11 +1752,11 @@ async function handleThreadMaintenance(
     alreadyInRequestedState?: RegExp;
   },
 ): Promise<void> {
-  const settle = (): void => {
+  const settle = async (): Promise<void> => {
     if (options?.releaseAfter) {
       const session = sessionsByBbThreadId.get(params.threadId);
       if (session) {
-        releaseSession(session);
+        await releaseSession(session);
       }
     }
     sendResult(id, { ok: true });
@@ -1670,13 +1765,13 @@ async function handleThreadMaintenance(
     await withChildForThread(params.threadId, (connection) =>
       sendMaintenanceRequestWithRetries(connection, request),
     );
-    settle();
+    await settle();
   } catch (error) {
     if (
       error instanceof Error &&
       options?.alreadyInRequestedState?.test(error.message) === true
     ) {
-      settle();
+      await settle();
       return;
     }
     rejectWithCodexError(id, error);

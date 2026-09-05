@@ -3,7 +3,11 @@
 import { useEffect, type ReactNode } from "react";
 import { Provider } from "jotai";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { PERSONAL_PROJECT_ID, type ThreadListEntry } from "@bb/domain";
+import {
+  defaultAppSettings,
+  PERSONAL_PROJECT_ID,
+  type ThreadListEntry,
+} from "@bb/domain";
 import {
   act,
   cleanup,
@@ -30,7 +34,8 @@ import {
 import { useRootComposeReuseEnvironment } from "@/lib/root-compose-selection";
 import { getPromptDraftAccessor } from "@/hooks/usePromptDraftStorage";
 import { buildThreadHandoffLocationState } from "@bb/client-core";
-import { makeThreadListEntry } from "@/test/fixtures/thread-list-entries";
+import { makeThreadListEntry } from "@bb/test-helpers/domain-fixtures";
+import { makeProjectWithThreadsResponse } from "@/test/fixtures/projects";
 import { RootComposeView } from "@/views/RootComposeView";
 import { PluginNewThreadComposer } from "./PluginNewThreadComposer";
 
@@ -56,13 +61,13 @@ vi.mock("@/lib/sdk", () => ({
   sdk: { projects: { attachments: { copy: mocks.copyAttachments } } },
 }));
 
-const PROJECT = {
+const PROJECT = makeProjectWithThreadsResponse({
   id: "proj_1",
   name: "Project One",
   defaultExecutionOptions: {
     providerId: "codex",
     model: "gpt-5.6",
-    serviceTier: undefined,
+    serviceTier: "default",
     reasoningLevel: "medium",
     permissionMode: "auto",
   },
@@ -78,15 +83,14 @@ const PROJECT = {
       updatedAt: 0,
     },
   ],
-  threads: [],
-};
+});
 
-const OTHER_PROJECT = {
+const OTHER_PROJECT = makeProjectWithThreadsResponse({
   ...PROJECT,
   id: "proj_2",
   name: "Project Two",
   sources: [{ ...PROJECT.sources[0], id: "src_2", projectId: "proj_2" }],
-};
+});
 
 vi.mock("@/hooks/queries/sidebar-navigation-query", () => ({
   useSidebarNavigation: () =>
@@ -98,12 +102,13 @@ vi.mock("@/hooks/queries/sidebar-navigation-query", () => ({
               OTHER_PROJECT,
               ...mocks.extraProjects,
             ],
-            personalProject: {
+            personalProject: makeProjectWithThreadsResponse({
               id: "personal",
+              kind: "personal",
               name: "Personal",
               sources: [],
               threads: [],
-            },
+            }),
           },
           isError: false,
           isLoading: false,
@@ -128,10 +133,13 @@ vi.mock("@/hooks/queries/host-queries", () => ({
 }));
 
 vi.mock("@/hooks/queries/system-queries", () => ({
+  useSystemProviders: () => ({ data: undefined }),
   useSystemProviderStates: () => ({ data: undefined, isPending: false }),
   useKnownProviderModelCatalogScope: () => undefined,
   useHostProviderCliStatus: () => ({ data: undefined }),
-  useSystemConfig: () => ({ data: { primaryHostId: "host_1" } }),
+  useSystemConfig: () => ({
+    data: { primaryHostId: "host_1", generalSettings: defaultAppSettings },
+  }),
   useSystemExecutionOptions: () => ({
     data: {
       providers: [
@@ -420,6 +428,40 @@ describe("PluginNewThreadComposer seeding", () => {
     await waitFor(() => {
       expect(latestPromptBoxProps().value).toBe("");
     });
+  });
+
+  it("marks a provider picked in an unseeded plugin composer as explicit", async () => {
+    const submitted: NewThreadRequest[] = [];
+    render(
+      <MemoryRouter>
+        <PluginNewThreadComposer
+          draftKey="picked-provider"
+          defaultProjectId="proj_1"
+          initialPrompt="hello"
+          onSubmit={(request) => {
+            submitted.push(request);
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(latestPromptBoxProps().disabled).toBe(false);
+    });
+    await act(async () => {
+      latestPromptBoxProps().execution.provider.onChange("claude-code");
+    });
+    await waitFor(() => {
+      expect(latestPromptBoxProps().execution.provider.selectedId).toBe(
+        "claude-code",
+      );
+      expect(latestPromptBoxProps().disabled).toBe(false);
+    });
+    await submit();
+
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0]?.providerId).toBe("claude-code");
+    expect(submitted[0]?.executionInputSources.providerId).toBe("explicit");
   });
 
   it("binds plugin draft actions to the hosted composer instance", async () => {
@@ -728,6 +770,7 @@ describe("PluginNewThreadComposer seeding", () => {
         environmentHostId: "host_1",
         environmentName: "source",
         environmentBranchName: "feature/source",
+        queuedWork: "none",
         environmentWorkspaceDisplayKind: "managed-worktree",
       }),
     ];
@@ -843,6 +886,7 @@ describe("PluginNewThreadComposer seeding", () => {
         environmentHostId: "host_1",
         environmentName: "source",
         environmentBranchName: "feature/source",
+        queuedWork: "none",
         environmentWorkspaceDisplayKind: "managed-worktree",
       }),
     ];

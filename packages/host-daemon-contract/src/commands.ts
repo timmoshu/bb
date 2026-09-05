@@ -178,6 +178,22 @@ export type HostDaemonBridgeLaunch = z.infer<
   typeof hostDaemonBridgeLaunchSchema
 >;
 
+export const hostDaemonContributedEnvEntrySchema = z
+  .object({
+    name: z.string().regex(/^[A-Z_][A-Z0-9_]*$/u),
+    value: z.union([
+      z.string(),
+      z.object({ serverPath: z.string().startsWith("/") }).strict(),
+    ]),
+    source: z.object({ plugin: z.string().min(1) }).strict(),
+    reason: z.string(),
+    secret: z.boolean(),
+  })
+  .strict();
+export type HostDaemonContributedEnvEntry = z.infer<
+  typeof hostDaemonContributedEnvEntrySchema
+>;
+
 const hostDaemonThreadRuntimeContextSchema = z
   .object({
     workspaceContext: workspaceContextSchema,
@@ -187,6 +203,7 @@ const hostDaemonThreadRuntimeContextSchema = z
     options: runtimeThreadExecutionOptionsSchema,
     instructions: z.string().min(1),
     dynamicTools: z.array(dynamicToolSchema),
+    contributedEnv: z.array(hostDaemonContributedEnvEntrySchema).default([]),
     injectedSkillSources: z.array(hostDaemonInjectedSkillSourceSchema),
     disallowedTools: z.array(z.string()).optional(),
     instructionMode: instructionModeSchema,
@@ -968,14 +985,6 @@ const workspaceCommitCommandSchema = hostDaemonWorkspaceTargetSchema
   })
   .strict();
 
-const workspaceSquashMergeCommandSchema = hostDaemonWorkspaceTargetSchema
-  .extend({
-    type: z.literal("workspace.squash_merge"),
-    targetBranch: gitBranchNameSchema,
-    commitMessage: z.string().min(1),
-  })
-  .strict();
-
 const fileReadResultSchema = z.object({
   path: z.string(),
   content: z.string(),
@@ -1217,9 +1226,6 @@ const workspaceCommitResultSchema = z.object({
   commitSha: z.string().min(1),
   commitSubject: z.string().min(1),
 });
-const workspaceSquashMergeResultSchema = workspaceCommitResultSchema.extend({
-  merged: z.boolean(),
-});
 const workspacePullRequestActionResultSchema = z.object({}).strict();
 
 export { providerUsageWindowSchema };
@@ -1435,15 +1441,6 @@ export const hostDaemonCommandRegistry = {
     type: "workspace.commit",
     schema: workspaceCommitCommandSchema,
     resultSchema: workspaceCommitResultSchema,
-    transport: "settled",
-    retryable: false,
-    flushEventsBeforeResult: false,
-    envLane: "write",
-  }),
-  "workspace.squash_merge": defineHostDaemonCommandDescriptor({
-    type: "workspace.squash_merge",
-    schema: workspaceSquashMergeCommandSchema,
-    resultSchema: workspaceSquashMergeResultSchema,
     transport: "settled",
     retryable: false,
     flushEventsBeforeResult: false,
@@ -1806,9 +1803,7 @@ type HostDaemonRetryableOnlineRpcCommandSchema =
 type HostDaemonResultSchemaMapForTransport<
   Transport extends HostDaemonCommandTransport,
 > = {
-  [
-    Descriptor in HostDaemonCommandDescriptorForTransport<Transport> as Descriptor["type"]
-  ]: Descriptor["resultSchema"];
+  [Descriptor in HostDaemonCommandDescriptorForTransport<Transport> as Descriptor["type"]]: Descriptor["resultSchema"];
 };
 
 type HostDaemonCommandResultSchemaMap =

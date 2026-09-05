@@ -142,7 +142,6 @@ function createWorkspace(workspacePath = WORKSPACE_PATH): HostWorkspace {
     listFiles: unexpectedWorkspaceCall,
     commit: unexpectedWorkspaceCall,
     reset: unexpectedWorkspaceCall,
-    squashMerge: unexpectedWorkspaceCall,
     destroy: vi.fn(async () => undefined),
   };
 }
@@ -249,6 +248,7 @@ function createTurnSubmitCommand(
       providerThreadId: "provider-thread-1",
       instructions: "Be concise.",
       dynamicTools: [],
+      contributedEnv: [],
       injectedSkillSources: [],
       instructionMode: "append",
     },
@@ -350,6 +350,7 @@ function createInstallationGatedThreadStart(
     },
     instructions: "Be concise.",
     dynamicTools: [],
+    contributedEnv: [],
     injectedSkillSources: [],
     instructionMode: "append",
   };
@@ -788,6 +789,7 @@ describe("dispatchCommand", () => {
         providerThreadId: "provider-thread-1",
         instructions: "Be concise.",
         dynamicTools: [],
+        contributedEnv: [],
         injectedSkillSources: [],
         instructionMode: "append",
       },
@@ -867,6 +869,7 @@ describe("dispatchCommand", () => {
         providerThreadId: "provider-thread-1",
         instructions: "Be concise.",
         dynamicTools: [],
+        contributedEnv: [],
         injectedSkillSources: [],
         instructionMode: "append",
       },
@@ -1243,6 +1246,7 @@ describe("dispatchCommand", () => {
         providerThreadId: "provider-thread-1",
         instructions: "Be concise.",
         dynamicTools: [],
+        contributedEnv: [],
         injectedSkillSources: [],
         instructionMode: "append",
       },
@@ -1337,6 +1341,7 @@ describe("dispatchCommand", () => {
       },
       instructions: "Be concise.",
       dynamicTools: [],
+      contributedEnv: [],
       injectedSkillSources: [],
       instructionMode: "append",
     };
@@ -1417,6 +1422,7 @@ describe("dispatchCommand", () => {
       },
       instructions: "Be concise.",
       dynamicTools: [],
+      contributedEnv: [],
       injectedSkillSources: [],
       instructionMode: "append",
     };
@@ -1485,6 +1491,7 @@ describe("dispatchCommand", () => {
       },
       instructions: "Be concise.",
       dynamicTools: [],
+      contributedEnv: [],
       injectedSkillSources: [],
       instructionMode: "append",
     };
@@ -1744,6 +1751,7 @@ describe("dispatchCommand", () => {
       options: start.options,
       instructions: start.instructions,
       dynamicTools: start.dynamicTools,
+      contributedEnv: [],
       injectedSkillSources: start.injectedSkillSources,
       instructionMode: start.instructionMode,
     };
@@ -2311,6 +2319,7 @@ describe("dispatchCommand", () => {
       },
       instructions: "Be concise.",
       dynamicTools: [],
+      contributedEnv: [],
       injectedSkillSources: [fixture.source],
       instructionMode: "append",
     };
@@ -2375,6 +2384,7 @@ describe("dispatchCommand", () => {
         providerThreadId: "provider-thread-1",
         instructions: "Be concise.",
         dynamicTools: [],
+        contributedEnv: [],
         injectedSkillSources: [fixture.source],
         instructionMode: "append",
       },

@@ -201,6 +201,8 @@ type TimelineWorkflowMessage = Extract<
   EventProjectionMessage,
   { kind: "workflow" }
 >;
+/** Every kind that renders as the plain title/detail row — i.e. the ones that
+ * do not carry their own extra fields in the read model. */
 type TimelineGenericSystemOperationKind = Exclude<
   TimelineSystemOperationKind,
   "parent-change"
@@ -219,6 +221,8 @@ function operationKindForMessage(
     case "warning":
     case "deprecation":
       return message.opType;
+    case "provider-environment":
+      return "generic";
     case "operation":
       return parentChange !== null ? "parent-change" : "generic";
     default:

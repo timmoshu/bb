@@ -1,11 +1,17 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import {
+  Navigate,
+  useNavigate,
+  useLocation,
+  matchPath,
+} from "react-router-dom";
 import "@bb/shared-ui/icon-extended";
 import {
   builtInThemes,
   defaultAppSettings,
   defaultAppTheme,
   defaultExperiments,
+  managedBranchPrefixSchema,
   type AppTheme,
   type FaviconColorPreference,
   type PluginThemeMeta,
@@ -16,6 +22,7 @@ import type {
 } from "@bb/host-daemon-contract";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
+import { Input } from "@bb/shared-ui/input";
 import { Switch } from "@bb/shared-ui/switch";
 import { COARSE_POINTER_ICON_SIZE_CLASS } from "@bb/shared-ui/coarse-pointer-sizing";
 import {
@@ -41,8 +48,12 @@ import { UsageLimitsSettingsSection } from "@/components/settings/UsageLimitsSet
 import { ProvidersSettingsSection } from "@/components/settings/ProvidersSettingsSection";
 import { CodeRendererSettings } from "@/components/settings/CodeRendererSettings";
 import { SidebarThreadListSetting } from "@/components/settings/SidebarThreadListSetting";
+import { SidebarNavigationSetting } from "@/components/settings/SidebarNavigationSetting";
 import { SplitDimmingSetting } from "@/components/settings/SplitDimmingSetting";
 import { useSettingsNavState } from "@/components/settings/settings-nav";
+import { PluginsOverview } from "@/components/plugin/PluginsOverview";
+import { PluginDetailPaneView } from "@/views/ToolsView";
+import { SETTINGS_PLUGIN_ROUTE_PATH } from "@/lib/route-paths";
 import { PluginSettingsPage } from "@/components/plugin/PluginSettings";
 import { FileOpenersSettingsSection } from "@/components/settings/FileOpenersSettingsSection";
 import { VoiceInputSettingsSection } from "@/components/settings/VoiceInputSettingsSection";
@@ -144,7 +155,10 @@ interface AppearanceSettingsSectionProps {
 
 interface GeneralSettingsSectionProps {
   desktopBrowserAvailable: boolean;
+  managedBranchPrefix: string;
+  managedBranchPrefixDisabled: boolean;
   navigateToThreadAfterCreate: boolean;
+  onManagedBranchPrefixChange: (prefix: string) => Promise<void> | void;
   onNavigateToThreadAfterCreateChange: (enabled: boolean) => void;
   onOpenLinksInAppBrowserChange: (enabled: boolean) => void;
   onRewriteLocalhostLinksChange: (enabled: boolean) => void;
@@ -183,12 +197,12 @@ interface ExperimentsSettingsSectionProps {
   changelogPreviewEnabled: boolean;
   editMessagesEnabled: boolean;
   mobileAppEnabled: boolean;
-  providerSessionReapingEnabled: boolean;
+  sidebarProgressiveDisclosureEnabled: boolean;
   timelineWindowingEnabled: boolean;
   onChangelogPreviewEnabledChange: (enabled: boolean) => void;
   onEditMessagesEnabledChange: (enabled: boolean) => void;
   onMobileAppEnabledChange: (enabled: boolean) => void;
-  onProviderSessionReapingEnabledChange: (enabled: boolean) => void;
+  onSidebarProgressiveDisclosureEnabledChange: (enabled: boolean) => void;
   onTimelineWindowingEnabledChange: (enabled: boolean) => void;
 }
 
@@ -547,6 +561,78 @@ const FOLLOW_UP_BEHAVIOR_OPTIONS = [
   },
 ] as const;
 const STREAMER_MODE_SETTING_LABEL = "Streamer mode";
+const MANAGED_BRANCH_PREFIX_SETTING_LABEL = "Worktree branch prefix";
+const MANAGED_BRANCH_PREFIX_EXAMPLE_SLUG = "fix-login-flow-thr_ab12cd34ef";
+
+interface ManagedBranchPrefixSettingProps {
+  disabled: boolean;
+  onChange: (prefix: string) => Promise<void> | void;
+  value: string;
+}
+
+function ManagedBranchPrefixSetting({
+  disabled,
+  onChange,
+  value,
+}: ManagedBranchPrefixSettingProps) {
+  const [draft, setDraft] = useState(value);
+  const [committedValue, setCommittedValue] = useState(value);
+  if (value !== committedValue) {
+    setCommittedValue(value);
+    setDraft(value);
+  }
+
+  const valid = managedBranchPrefixSchema.safeParse(draft).success;
+  const commit = () => {
+    if (!valid) {
+      setDraft(value);
+      return;
+    }
+    if (draft !== value) {
+      void Promise.resolve(onChange(draft)).catch(() => setDraft(value));
+    }
+  };
+
+  return (
+    <SettingsWithControl
+      label={MANAGED_BRANCH_PREFIX_SETTING_LABEL}
+      description={
+        valid ? (
+          `bb puts this in front of every branch it creates for a worktree, such as ${draft}${MANAGED_BRANCH_PREFIX_EXAMPLE_SLUG}. Leave it empty for no prefix.`
+        ) : (
+          <span className="text-destructive" role="alert">
+            This prefix cannot start a valid git branch name.
+          </span>
+        )
+      }
+      controlPlacement="below"
+    >
+      <Input
+        value={draft}
+        aria-label={MANAGED_BRANCH_PREFIX_SETTING_LABEL}
+        aria-invalid={!valid}
+        disabled={disabled}
+        placeholder="No prefix"
+        className={cn(
+          "h-8 font-mono text-xs",
+          !valid && "border-destructive focus-visible:ring-destructive",
+        )}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setDraft(value);
+          }
+        }}
+      />
+    </SettingsWithControl>
+  );
+}
 
 export function AppearanceSettingsSection({
   appearance,
@@ -564,6 +650,7 @@ export function AppearanceSettingsSection({
     <SettingsSection title="Appearance">
       <div className="space-y-5">
         <SidebarThreadListSetting />
+        <SidebarNavigationSetting />
         <CodeRendererSettings />
         <SettingsWithControl label="Theme">
           <DropdownMenu>
@@ -704,7 +791,10 @@ export function AppearanceSettingsSection({
 
 export function GeneralSettingsSection({
   desktopBrowserAvailable,
+  managedBranchPrefix,
+  managedBranchPrefixDisabled,
   navigateToThreadAfterCreate,
+  onManagedBranchPrefixChange,
   onNavigateToThreadAfterCreateChange,
   onOpenLinksInAppBrowserChange,
   onRewriteLocalhostLinksChange,
@@ -817,6 +907,12 @@ export function GeneralSettingsSection({
           />
         </SettingsWithControl>
 
+        <ManagedBranchPrefixSetting
+          value={managedBranchPrefix}
+          disabled={managedBranchPrefixDisabled}
+          onChange={onManagedBranchPrefixChange}
+        />
+
         <SettingsWithControl
           label={STREAMER_MODE_SETTING_LABEL}
           description="Hide the custom models from config.json in every model picker, so a screen share does not show them."
@@ -858,20 +954,20 @@ export function DebugSettingsSection({
 const CHANGELOG_PREVIEW_EXPERIMENT_LABEL = "Changelog preview";
 const EDIT_MESSAGES_EXPERIMENT_LABEL = "Edit messages";
 const MOBILE_APP_EXPERIMENT_LABEL = "Mobile app";
-const PROVIDER_SESSION_REAPING_EXPERIMENT_LABEL =
-  "Idle provider session release";
+const SIDEBAR_PROGRESSIVE_DISCLOSURE_EXPERIMENT_LABEL =
+  "Sidebar progressive disclosure";
 const TIMELINE_WINDOWING_EXPERIMENT_LABEL = "Timeline windowing";
 export function ExperimentsSettingsSection({
   changelogPreviewEnabled,
   disabled,
   editMessagesEnabled,
   mobileAppEnabled,
-  providerSessionReapingEnabled,
+  sidebarProgressiveDisclosureEnabled,
   timelineWindowingEnabled,
   onChangelogPreviewEnabledChange,
   onEditMessagesEnabledChange,
   onMobileAppEnabledChange,
-  onProviderSessionReapingEnabledChange,
+  onSidebarProgressiveDisclosureEnabledChange,
   onTimelineWindowingEnabledChange,
 }: ExperimentsSettingsSectionProps) {
   return (
@@ -917,14 +1013,14 @@ export function ExperimentsSettingsSection({
         </SettingsWithControl>
 
         <SettingsWithControl
-          label={PROVIDER_SESSION_REAPING_EXPERIMENT_LABEL}
-          description="Release restorable provider sessions after 30 idle minutes. A change can take up to five minutes."
+          label={SIDEBAR_PROGRESSIVE_DISCLOSURE_EXPERIMENT_LABEL}
+          description="In By project and By machine, show the first five groups in the current sort order, keep attention groups visible, and reveal ten more per click. Manually is unchanged."
         >
           <Switch
-            checked={providerSessionReapingEnabled}
+            checked={sidebarProgressiveDisclosureEnabled}
             disabled={disabled}
-            onCheckedChange={onProviderSessionReapingEnabledChange}
-            aria-label={PROVIDER_SESSION_REAPING_EXPERIMENT_LABEL}
+            onCheckedChange={onSidebarProgressiveDisclosureEnabledChange}
+            aria-label={SIDEBAR_PROGRESSIVE_DISCLOSURE_EXPERIMENT_LABEL}
           />
         </SettingsWithControl>
 
@@ -972,10 +1068,25 @@ export function SettingsView() {
   const updateGeneralSettingsMutation = useUpdateGeneralSettings();
   const appearance = systemConfigQuery.data?.appearance ?? defaultAppTheme;
   const updateAppearanceMutation = useUpdateAppearance();
+  const location = useLocation();
   const { activePluginId, activeSection, hasUnknownSection } =
     useSettingsNavState();
   if (hasUnknownSection) {
     return <Navigate to={SETTINGS_ROUTE_PATH} replace />;
+  }
+
+  if (activeSection === "plugins") {
+    const pluginId = matchPath(SETTINGS_PLUGIN_ROUTE_PATH, location.pathname)
+      ?.params.pluginId;
+    return (
+      <div className="-mx-4 -mt-4 flex min-h-0 flex-1 flex-col overflow-hidden pt-4 md:-mx-5 md:-mt-5 md:pt-5">
+        {pluginId ? (
+          <PluginDetailPaneView pluginId={pluginId} />
+        ) : (
+          <PluginsOverview />
+        )}
+      </div>
+    );
   }
 
   let content: ReactNode = null;
@@ -1085,11 +1196,13 @@ export function SettingsView() {
             mobileApp: enabled,
           })
         }
-        providerSessionReapingEnabled={experiments.providerSessionReaping}
-        onProviderSessionReapingEnabledChange={(enabled) =>
+        sidebarProgressiveDisclosureEnabled={
+          experiments.sidebarProgressiveDisclosure
+        }
+        onSidebarProgressiveDisclosureEnabledChange={(enabled) =>
           updateExperimentsMutation.mutate({
             ...experiments,
-            providerSessionReaping: enabled,
+            sidebarProgressiveDisclosure: enabled,
           })
         }
         timelineWindowingEnabled={experiments.timelineWindowing}
@@ -1112,6 +1225,17 @@ export function SettingsView() {
       <>
         <GeneralSettingsSection
           desktopBrowserAvailable={desktopBrowserAvailable}
+          managedBranchPrefix={generalSettings.managedBranchPrefix}
+          managedBranchPrefixDisabled={
+            systemConfigQuery.data === undefined ||
+            updateGeneralSettingsMutation.isPending
+          }
+          onManagedBranchPrefixChange={async (prefix) => {
+            await updateGeneralSettingsMutation.mutateAsync({
+              ...generalSettings,
+              managedBranchPrefix: prefix,
+            });
+          }}
           navigateToThreadAfterCreate={navigateToThreadAfterCreate}
           openLinksInAppBrowser={openLinksInAppBrowser}
           rewriteLocalhostLinks={rewriteLocalhostLinks}

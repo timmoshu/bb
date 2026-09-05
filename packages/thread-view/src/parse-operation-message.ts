@@ -7,6 +7,7 @@ import type {
   UserQuestionInteractionLifecycle,
 } from "@bb/domain";
 import {
+  THREAD_CONTEXT_CLEAR_OPERATION,
   isApprovalInteractionLifecycle,
   isUserQuestionInteractionLifecycle,
   ownershipChangeOperationMetadataSchema,
@@ -189,6 +190,12 @@ function threadOperationTitle(
     case "ownership_change":
       return ownershipChangeOperationTitle(meta, threadName);
     case "other":
+      if (
+        meta.rawOperation === THREAD_CONTEXT_CLEAR_OPERATION &&
+        meta.status === "completed"
+      ) {
+        return "Context cleared";
+      }
       return `${capitalize(meta.rawOperation.replace(/_/g, " "))} ${
         meta.rawStatus
       }`;
@@ -465,6 +472,23 @@ export function parseOperationMessage(
         options?.providerDisplayName,
       )} event`,
       detail: buildProviderUnhandledDetail(decoded),
+      status: "completed",
+    });
+  }
+
+  if (decoded.type === "provider.env-resolved") {
+    const detail = decoded.entries
+      .map((entry) => {
+        const source = entry.source === "shell" ? "shell" : entry.source.plugin;
+        const value = typeof entry.value === "string" ? entry.value : "••••••";
+        const reason = entry.reason ? ` — ${entry.reason}` : "";
+        return `${entry.name}=${value} (${source})${reason}`;
+      })
+      .join("\n");
+    return op(decoded, meta, "provider-environment", {
+      opType: "provider-environment",
+      title: "Provider environment resolved",
+      detail: detail || undefined,
       status: "completed",
     });
   }

@@ -11,6 +11,7 @@ import {
 } from "@bb/domain";
 import type { StartedOnBehalfOf } from "@bb/server-contract";
 import type { AppDeps } from "../../types.js";
+import { requestQueuedMessageDispatch } from "./queued-message-dispatch.js";
 import {
   appendClientTurnEvent,
   appendPreparedClientTurnRequestedEventWithNotificationInTransaction,
@@ -40,6 +41,7 @@ import {
   rememberActiveThreadProvisionContext,
 } from "./thread-provisioning-active-context.js";
 import { applyLoggedThreadLifecycleEvent } from "./lifecycle-outcome.js";
+import { runtimeErrorLogFields } from "../lib/error-log-fields.js";
 import { recordAcceptedPromptHistoryEntry } from "../prompt-history.js";
 
 interface RequestThreadProvisionArgs {
@@ -56,7 +58,7 @@ interface RequestThreadProvisionArgs {
 interface RequestThreadReprovisionArgs {
   beforeRequestAppendInTransaction?: (args: { tx: DbTransaction }) => void;
   environment: Environment;
-  provisionEventSequence: number;
+  provisionEventSequence: number | ((args: { tx: DbTransaction }) => number);
   execution: ResolvedThreadExecutionOptions;
   input: PromptInput[];
   inputGroups?: PromptInput[][];
@@ -156,6 +158,15 @@ async function startThreadIfEnvironmentReady(
   if (!workspaceReady.reached) {
     throw new Error("Thread did not reach workspace-ready provisioning state");
   }
+
+  // The workspace exists, so anything that queued waiting for it stops
+  // waiting here rather than after the dispatch below: the wait is over at
+  // this line, and the `run.succeeded` branch below returns without
+  // dispatching anything. A thread with nothing queued no-ops.
+  requestQueuedMessageDispatch(deps, {
+    kind: "workspace-ready",
+    threadId: args.thread.id,
+  });
 
   if (
     args.context.request.seedWithoutRun &&
@@ -260,9 +271,13 @@ export function requestThreadReprovision(
   args: RequestThreadReprovisionArgs,
 ): ThreadProvisionContext {
   const requestId = createClientTurnRequestId();
-  const request = deps.db.transaction(
+  const prepared = deps.db.transaction(
     (tx) => {
       args.beforeRequestAppendInTransaction?.({ tx });
+      const provisionEventSequence =
+        typeof args.provisionEventSequence === "function"
+          ? args.provisionEventSequence({ tx })
+          : args.provisionEventSequence;
       const request =
         appendPreparedClientTurnRequestedEventWithNotificationInTransaction(
           tx,
@@ -295,19 +310,19 @@ export function requestThreadReprovision(
           requestSequence: request.sequence,
         },
       );
-      return request;
+      return { provisionEventSequence, request };
     },
     { behavior: "immediate" },
   );
   deps.hub.notifyThread(
     args.thread.id,
-    request.notificationChanges,
-    request.notificationMetadata,
+    prepared.request.notificationChanges,
+    prepared.request.notificationMetadata,
   );
 
   const context = createReprovisioningContext({
-    clientRequestId: request.requestId,
-    provisionEventSequence: args.provisionEventSequence,
+    clientRequestId: prepared.request.requestId,
+    provisionEventSequence: prepared.provisionEventSequence,
     execution: args.execution,
     environmentId: args.environment.id,
     input: args.input,
@@ -384,4 +399,28 @@ export async function advanceThreadProvisioning(
   await deps.lifecycleDedupers.threadProvisionAdvance.run(args.threadId, () =>
     advanceThreadProvisioningOnce(deps, args),
   );
+}
+
+/**
+ * Drives provisioning off the caller's stack. Creation returns the thread row
+ * before the workspace exists, and a cold-start row whose wait cleared returns
+ * to its sweep or route the same way, so neither waits on the daemon.
+ */
+export function scheduleThreadProvisioningAdvance(
+  deps: ThreadProvisioningDeps & Pick<AppDeps, "config" | "logger">,
+  context: ThreadProvisionContext,
+  threadId: string,
+): void {
+  void advanceThreadProvisioning(deps, {
+    context,
+    threadId,
+  }).catch((error) => {
+    deps.logger.warn(
+      {
+        threadId,
+        ...runtimeErrorLogFields(deps.config, error),
+      },
+      "Failed to advance thread provisioning",
+    );
+  });
 }

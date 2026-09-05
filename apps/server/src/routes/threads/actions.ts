@@ -36,12 +36,13 @@ import {
   wouldCleanupEnvironment,
 } from "../../services/environments/environment-cleanup-internal.js";
 import { applyLoggedEnvironmentLifecycleEvent } from "../../services/environments/lifecycle-outcome.js";
+import { retryFailedTurn } from "../../services/threads/turn-retry.js";
 import { requirePublicThread } from "../../services/lib/entity-lookup.js";
 import { parseSafeRelativeRoutePath } from "../relative-route-path.js";
 import { validatePromptAttachmentReferences } from "../../services/projects/attachments.js";
 import {
   createQueuedMessageForThread,
-  sendQueuedMessage,
+  sendQueuedMessageNow,
 } from "../../services/threads/queued-messages.js";
 import {
   ensureThreadIsNotAwaitingUserInteraction,
@@ -50,6 +51,7 @@ import {
 } from "../../services/threads/thread-send.js";
 import { acceptThreadSendRequest } from "../../services/threads/thread-send-request.js";
 import { editThreadMessage } from "../../services/threads/thread-edit-message.js";
+import { clearThreadContext } from "../../services/threads/thread-context-clear.js";
 import {
   buildExecutionOptions,
   dispatchThreadUnarchiveCommand,
@@ -57,6 +59,7 @@ import {
 } from "../../services/threads/thread-commands.js";
 import { getLastProviderThreadId } from "../../services/threads/thread-events.js";
 import { stopThreadForCurrentState } from "../../services/threads/thread-lifecycle.js";
+import { assertCoordinationContextApplied } from "../../services/work-together-thread-context.js";
 import {
   getThreadPromptBannerActivity,
   toThreadListEntryResponses,
@@ -123,6 +126,7 @@ async function compactThreadContext(
   deps: AppDeps,
   thread: Thread,
 ): Promise<void> {
+  assertCoordinationContextApplied(deps.db, thread.id);
   ensureThreadIsWritable(thread);
   if (!deps.providerRegistry.supportsManualCompaction(thread.providerId)) {
     throw new ApiError(
@@ -245,6 +249,13 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
     return context.json(result);
   });
 
+  post(routes.retry, async (context, payload) => {
+    const thread = requirePublicThread(deps.db, context.req.param("id"));
+    ensureThreadIsWritable(thread);
+    const result = await retryFailedTurn(deps, { request: payload, thread });
+    return context.json(result);
+  });
+
   post(routes.createQueuedMessage, async (context, payload) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
     const queuedMessage = await createQueuedMessageForThread(deps, {
@@ -258,12 +269,12 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
     ensureThreadIsWritable(thread);
     ensureThreadIsNotAwaitingUserInteraction(deps, thread.id);
-    const queuedMessage = await sendQueuedMessage(deps, {
+    const result = await sendQueuedMessageNow(deps, {
       queuedMessageId: context.req.param("queuedMessageId"),
       mode: payload.mode,
       threadId: context.req.param("id"),
     });
-    return context.json({ ok: true, queuedMessage });
+    return context.json({ ok: true, ...result });
   });
 
   patch(routes.reorderQueuedMessage, (context, payload) => {
@@ -367,6 +378,14 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
   post(routes.compact, async (context) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
     await compactThreadContext(deps, thread);
+    return context.json({ ok: true });
+  });
+
+  post(routes.clearContext, async (context) => {
+    const thread = requirePublicThread(deps.db, context.req.param("id"));
+    assertCoordinationContextApplied(deps.db, thread.id);
+    const environment = await requireThreadCommandEnvironment(deps, { thread });
+    await clearThreadContext(deps, { environment, thread });
     return context.json({ ok: true });
   });
 
@@ -566,7 +585,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
     const providerThreadId = getLastProviderThreadId(deps, thread.id);
     unarchiveThread(deps.db, deps.hub, thread.id);
-    const environment = thread.environmentId
+    let environment = thread.environmentId
       ? getEnvironment(deps.db, thread.environmentId)
       : null;
     if (environment?.status === "retiring") {
@@ -574,6 +593,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
         environmentId: environment.id,
         event: { type: "retire.cancelled" },
       });
+      environment = getEnvironment(deps.db, environment.id);
     }
     if (providerThreadId && environment) {
       dispatchThreadUnarchiveCommand(deps, {

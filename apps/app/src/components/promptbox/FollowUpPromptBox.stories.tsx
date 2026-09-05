@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   Environment,
   PermissionMode,
@@ -13,6 +7,7 @@ import type {
   ThreadQueuedMessage,
   WorkspaceStatus,
 } from "@bb/domain";
+import { makeThreadQueuedMessage } from "@bb/test-helpers/domain-fixtures";
 import {
   formatEnvironmentDisplay,
   type EnvironmentDisplayHostContext,
@@ -550,17 +545,11 @@ const environmentGoneContextBannerElement: ReactNode = (
 );
 
 function makeStoryQueuedMessage(id: string, text: string): ThreadQueuedMessage {
-  return {
+  return makeThreadQueuedMessage({
     id,
+    threadId: "thr_prompt_pills",
     content: [{ type: "text", text, mentions: [] }],
-    model: "gpt-5.5",
-    reasoningLevel: "medium",
-    permissionMode: "auto",
-    serviceTier: "default",
-    groupWithNext: false,
-    createdAt: 0,
-    updatedAt: 0,
-  };
+  });
 }
 
 const queuedMessages: readonly ThreadQueuedMessage[] = [
@@ -772,13 +761,15 @@ function Row({
   const queueElement =
     initialQueuedMessages === undefined ? null : (
       <QueuedMessagesList
+        attachedToComposer={true}
         queuedMessages={storyQueuedMessages}
         inlineEditor={inlineEditor}
+        sendAction="send-now"
         sendDisabled={false}
         actionDisabled={false}
         processingMessageId={null}
         processingAction={null}
-        onSendImmediately={(id) =>
+        onSend={(id) =>
           setStoryQueuedMessages((current) =>
             current.filter((message) => message.id !== id),
           )

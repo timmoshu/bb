@@ -5,6 +5,7 @@ import {
   getProject,
   getThread,
   isSqliteForeignKeyConstraint,
+  markWorkTogetherCoordinationThread,
 } from "@bb/db";
 import type { DbNotifier } from "@bb/db";
 import type { HostDaemonCommand } from "@bb/host-daemon-contract";
@@ -13,6 +14,7 @@ import type { BaseBranchSpec } from "@bb/server-contract";
 import type { AppDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
 import { emitPluginThreadCreated } from "../plugins/plugin-thread-events.js";
+import { NotificationBuffer } from "../lib/notification-buffer.js";
 import type { ThreadCreateServiceRequest } from "./thread-create-request.js";
 import { sanitizeGeneratedBranchSlug } from "./title-generation.js";
 
@@ -36,6 +38,7 @@ type EnvironmentProvisionCommandInitiator =
   EnvironmentProvisionCommand["initiator"];
 
 interface ManagedBranchNameArgs {
+  branchPrefix: string;
   branchSlug?: string | null;
   threadId: string;
 }
@@ -45,8 +48,8 @@ export function buildManagedBranchName(args: ManagedBranchNameArgs): string {
     ? sanitizeGeneratedBranchSlug(args.branchSlug)
     : null;
   return branchSlug
-    ? `bb/${branchSlug}-${args.threadId}`
-    : `bb/${args.threadId}`;
+    ? `${args.branchPrefix}${branchSlug}-${args.threadId}`
+    : `${args.branchPrefix}${args.threadId}`;
 }
 
 export function requirePublicProjectForThreadCreate(
@@ -150,6 +153,8 @@ export function createThreadRecord(
   deps: Pick<AppDeps, "db"> & { hub: DbNotifier },
   args: {
     environmentId: string | null;
+    initialStatus?: "idle" | "pending";
+    markWorkTogetherCoordination?: boolean;
     request: ThreadCreateServiceRequest;
     threadId?: string;
   },
@@ -160,21 +165,34 @@ export function createThreadRecord(
   }
 
   try {
-    const thread = createThread(deps.db, deps.hub, {
-      ...(args.threadId === undefined ? {} : { id: args.threadId }),
-      projectId: args.request.projectId,
-      environmentId: args.environmentId,
-      providerId: args.request.providerId,
-      title: args.request.title ?? null,
-      titleFallback: args.request.titleFallback,
-      sectionId,
-      parentThreadId: args.request.parentThreadId ?? null,
-      sourceThreadId: args.request.sourceThreadId ?? null,
-      originKind: args.request.originKind,
-      originPluginId: args.request.originPluginId ?? null,
-      visibility: args.request.visibility,
-      status: "starting",
-    });
+    const create = (db: typeof deps.db, notifier: DbNotifier) =>
+      createThread(db, notifier, {
+        ...(args.threadId === undefined ? {} : { id: args.threadId }),
+        projectId: args.request.projectId,
+        environmentId: args.environmentId,
+        providerId: args.request.providerId,
+        title: args.request.title ?? null,
+        titleFallback: args.request.titleFallback,
+        sectionId,
+        parentThreadId: args.request.parentThreadId ?? null,
+        sourceThreadId: args.request.sourceThreadId ?? null,
+        originKind: args.request.originKind,
+        originPluginId: args.request.originPluginId ?? null,
+        visibility: args.request.visibility,
+        status: args.initialStatus ?? "pending",
+      });
+    const thread = args.markWorkTogetherCoordination
+      ? (() => {
+          const notifications = new NotificationBuffer();
+          const created = deps.db.$client.transaction(() => {
+            const row = create(deps.db, notifications);
+            markWorkTogetherCoordinationThread(deps.db, row.id);
+            return row;
+          })();
+          notifications.flushInto(deps.hub);
+          return created;
+        })()
+      : create(deps.db, deps.hub);
     emitPluginThreadCreated(thread);
     return thread;
   } catch (error) {

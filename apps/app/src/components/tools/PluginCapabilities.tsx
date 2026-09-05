@@ -216,9 +216,22 @@ function pluginAppSurfaceItems(
     ),
     ...namedSlotItems(
       pluginId,
+      slots.appOverlays,
+      "app-overlay",
+      "Renders app-wide floating interface content.",
+    ),
+    ...namedSlotItems(
+      pluginId,
       slots.threadLists,
       "thread-list",
       "Can replace the sidebar thread list; configured in Appearance.",
+      () => getSettingsRoutePath("appearance"),
+    ),
+    ...namedSlotItems(
+      pluginId,
+      slots.experimentalSidebarNavigations,
+      "sidebar-navigation",
+      "Can replace the sidebar navigation controls; configured in Appearance.",
       () => getSettingsRoutePath("appearance"),
     ),
     ...namedSlotItems(
@@ -251,12 +264,18 @@ function pluginAppSurfaceItems(
       "input",
       "Renders a custom interaction inside a thread.",
     ),
-    ...namedSlotItems(
-      pluginId,
-      slots.sidebarFooterActions,
-      "sidebar",
-      "Adds an action to the app sidebar.",
-    ),
+    ...slots.sidebarFooterItems
+      .filter((slot) => slot.pluginId === pluginId)
+      .map((slot) =>
+        namedSurface(
+          "sidebar-footer",
+          slot.id,
+          slot.label,
+          slot.kind === "action"
+            ? "Adds an action to the app sidebar footer."
+            : "Adds content revealed from the app sidebar footer.",
+        ),
+      ),
     ...namedSlotItems(
       pluginId,
       slots.messageActions,
@@ -537,6 +556,7 @@ export function PluginHealthBanner({
 }) {
   const queryClient = useQueryClient();
   const reload = useMutation({
+    meta: { showErrorToast: false },
     mutationFn: () => reloadPlugin(fetch, plugin.id),
     onSuccess: () => invalidatePluginList({ queryClient }),
     onError: (error) => {

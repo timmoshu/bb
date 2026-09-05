@@ -8,7 +8,7 @@ import {
   markThreadDeleted,
   upsertProjectExecutionDefaults,
 } from "@bb/db";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../../src/server.js";
 import {
   coordinationThreadIdForBindingKey,
@@ -122,6 +122,58 @@ describe("work-together coordination thread route", () => {
           }),
         });
         expect(missing.status).toBe(401);
+      },
+    );
+  });
+
+  it("rolls back coordination thread creation when its marker cannot be stored", async () => {
+    await withTestHarness(
+      { workTogetherIntegrationToken: TOKEN },
+      async (harness) => {
+        const { host } = seedHostSession(harness.deps, {
+          id: "host-wt-marker-rollback",
+        });
+        const { project } = seedProjectWithSource(harness.deps, {
+          hostId: host.id,
+          path: "/tmp/wt-marker-rollback",
+        });
+        const environment = seedEnvironment(harness.deps, {
+          hostId: host.id,
+          projectId: project.id,
+          path: "/tmp/wt-marker-rollback",
+        });
+        harness.db.$client.exec(`
+          CREATE TRIGGER reject_wt_marker
+          BEFORE INSERT ON work_together_thread_contexts
+          BEGIN
+            SELECT RAISE(ABORT, 'reject marker');
+          END;
+        `);
+        const notifyProject = vi.spyOn(harness.hub, "notifyProject");
+        const notifyThread = vi.spyOn(harness.hub, "notifyThread");
+
+        const response = await harness.app.request(
+          "/api/work-together/v1/coordination-threads/goal-marker-rollback",
+          {
+            method: "PUT",
+            headers: {
+              authorization: "Bearer " + TOKEN,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              projectId: project.id,
+              environmentId: environment.id,
+              title: "Marker rollback",
+            }),
+          },
+        );
+
+        expect(response.status).toBe(500);
+        expect(listThreads(harness.db, { projectId: project.id })).toHaveLength(
+          0,
+        );
+        expect(notifyProject).not.toHaveBeenCalled();
+        expect(notifyThread).not.toHaveBeenCalled();
       },
     );
   });

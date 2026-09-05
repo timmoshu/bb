@@ -4,10 +4,14 @@ import {
   getThread,
   getWorkTogetherThreadContext,
   listEvents,
+  listQueuedThreadMessages,
   listStoredThreadPromptHistoryRows,
+  markWorkTogetherCoordinationThread,
 } from "@bb/db";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../src/server.js";
+import { attemptDispatch } from "../../src/services/threads/dispatch-attempt.js";
+import { queueParentSystemMessage } from "../../src/services/threads/parent-system-messages.js";
 import { assertCoordinationAcpCwd } from "../../src/services/work-together-thread-context.js";
 import { listQueuedThreadCommands } from "../helpers/commands.js";
 import {
@@ -453,6 +457,156 @@ describe("work-together thread context apply", () => {
         ).toBe(false);
       },
     );
+  });
+
+  it("blocks the shared dispatch checkpoint before coordination context apply", async () => {
+    await withTestHarness(
+      { workTogetherIntegrationToken: TOKEN },
+      async (harness) => {
+        const { host } = seedHostSession(harness.deps, {
+          id: "host-wt-context-dispatch",
+        });
+        const { project } = seedProjectWithSource(harness.deps, {
+          hostId: host.id,
+          path: "/tmp/wt-thread-context-dispatch",
+        });
+        const environment = seedEnvironment(harness.deps, {
+          hostId: host.id,
+          projectId: project.id,
+          path: "/tmp/wt-thread-context-dispatch",
+        });
+        const created = await putCoordination(harness, {
+          projectId: project.id,
+          environmentId: environment.id,
+        });
+        const threadId = ((await created.json()) as { thread: { id: string } })
+          .thread.id;
+        const thread = getThread(harness.db, threadId)!;
+
+        await expect(
+          attemptDispatch(harness.deps, {
+            thread,
+            payload: {
+              input: [
+                {
+                  type: "localFile",
+                  path: "nonexistent-wt-dispatch-attachment",
+                  name: "missing.txt",
+                  sizeBytes: 1,
+                },
+              ],
+              mode: "queue-if-active",
+              model: "gpt-5",
+            },
+            source: { kind: "inline" },
+            queuePayload: { kind: "inline" },
+            origin: null,
+            originPluginId: null,
+            startedOnBehalfOf: null,
+            trigger: "user",
+          }),
+        ).rejects.toMatchObject({ body: { code: "context_not_applied" } });
+        expect(
+          listStoredThreadPromptHistoryRows(harness.db, {
+            threadId,
+            limit: 20,
+          }),
+        ).toHaveLength(0);
+        expect(
+          listQueuedThreadCommands(harness, "thread.start", threadId),
+        ).toHaveLength(0);
+      },
+    );
+  });
+
+  it("blocks parent system delivery before coordination context apply", async () => {
+    await withTestHarness(async (harness) => {
+      const { host } = seedHostSession(harness.deps, {
+        id: "host-wt-context-parent-system",
+      });
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+        path: "/tmp/wt-context-parent-system",
+      });
+      const thread = seedThread(harness.deps, {
+        environmentId: null,
+        projectId: project.id,
+        status: "idle",
+      });
+      markWorkTogetherCoordinationThread(harness.db, thread.id);
+      const eventCount = listEvents(harness.db, { threadId: thread.id }).length;
+
+      await expect(
+        queueParentSystemMessage(harness.deps, {
+          input: [{ type: "text", text: "Child completed", mentions: [] }],
+          parentThreadId: thread.id,
+          systemMessageKind: "child-completed",
+          systemMessageSubject: null,
+        }),
+      ).rejects.toMatchObject({ body: { code: "context_not_applied" } });
+      expect(listEvents(harness.db, { threadId: thread.id })).toHaveLength(
+        eventCount,
+      );
+      expect(listQueuedThreadMessages(harness.db, thread.id)).toHaveLength(0);
+    });
+  });
+
+  it("blocks compaction before coordination context apply", async () => {
+    await withTestHarness(async (harness) => {
+      const { host } = seedHostSession(harness.deps, {
+        id: "host-wt-context-compact",
+      });
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+        path: "/tmp/wt-context-compact",
+      });
+      const thread = seedThread(harness.deps, {
+        environmentId: null,
+        projectId: project.id,
+        providerId: "codex",
+        status: "idle",
+      });
+      markWorkTogetherCoordinationThread(harness.db, thread.id);
+
+      const response = await harness.app.request(
+        `/api/v1/threads/${thread.id}/compact`,
+        { method: "POST" },
+      );
+
+      expect(response.status).toBe(409);
+      expect(((await response.json()) as { code?: string }).code).toBe(
+        "context_not_applied",
+      );
+    });
+  });
+
+  it("blocks context clearing before coordination context apply", async () => {
+    await withTestHarness(async (harness) => {
+      const { host } = seedHostSession(harness.deps, {
+        id: "host-wt-context-clear",
+      });
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+        path: "/tmp/wt-context-clear",
+      });
+      const thread = seedThread(harness.deps, {
+        environmentId: null,
+        projectId: project.id,
+        providerId: "codex",
+        status: "idle",
+      });
+      markWorkTogetherCoordinationThread(harness.db, thread.id);
+
+      const response = await harness.app.request(
+        `/api/v1/threads/${thread.id}/context/clear`,
+        { method: "POST" },
+      );
+
+      expect(response.status).toBe(409);
+      expect(((await response.json()) as { code?: string }).code).toBe(
+        "context_not_applied",
+      );
+    });
   });
 
   it("does not require apply for ordinary non-coordination send", async () => {

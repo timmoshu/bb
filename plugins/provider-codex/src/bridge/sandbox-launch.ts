@@ -43,6 +43,8 @@ const ALLOWED_ENV_KEYS = new Set([
   "SSL_CERT_FILE",
   "SSL_CERT_DIR",
   "NODE_EXTRA_CA_CERTS",
+  "CODEX_OPENAI_BASE_URL",
+  "CODEX_POOL_AUTH_TOKEN",
 ]);
 const EMBEDDED_CREDENTIAL_URL = /(?:https?|git):\/\/[^/\s:]+:[^/\s@]+@/i;
 const EMBEDDED_TOKEN_URL = /(?:https?|git):\/\/(?!git@)[^/\s@]+@/i;

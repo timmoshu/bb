@@ -151,6 +151,8 @@ describe("Codex app-server sandbox launch", () => {
       env: {
         PATH: process.env.PATH,
         CODEX_HOME: sourceAuth,
+        CODEX_OPENAI_BASE_URL: "http://127.0.0.1:3210/v1",
+        CODEX_POOL_AUTH_TOKEN: "pool-token",
         GH_TOKEN: "hidden",
         OPENAI_API_KEY: "hidden",
         AWS_SECRET_ACCESS_KEY: "hidden",
@@ -170,6 +172,8 @@ describe("Codex app-server sandbox launch", () => {
     expect(plan.env).toMatchObject({
       HOME: "/run/bb-codex-home",
       CODEX_HOME: "/run/bb-codex-auth",
+      CODEX_OPENAI_BASE_URL: "http://127.0.0.1:3210/v1",
+      CODEX_POOL_AUTH_TOKEN: "pool-token",
       GIT_TERMINAL_PROMPT: "0",
     });
     expect(plan.env.GH_TOKEN).toBeUndefined();

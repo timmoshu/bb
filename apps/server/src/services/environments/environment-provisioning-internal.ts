@@ -5,6 +5,7 @@ import {
   type DbNotifier,
   type DbQueryConnection,
   type DbTransaction,
+  getAppSettings,
   getEnvironment,
   getThread,
   listStoredThreadProvisioningRowsByProvisioningId,
@@ -957,10 +958,10 @@ interface ActiveManagedEnvironmentProvisionArgs {
 }
 
 interface DispatchManagedEnvironmentReprovisionArgs {
-  beforeProvisionCommandStart?: () => void;
+  beforeProvisionCommandStart?: () => number;
   environment: Environment;
   projectId: string;
-  provisionEventSequence: number;
+  provisionEventSequence?: number;
   provisioningId: string;
   threadId: string;
 }
@@ -1036,7 +1037,10 @@ export async function dispatchManagedEnvironmentReprovision(
             });
           const branchName =
             args.environment.branchName ??
-            buildManagedBranchName({ threadId: args.threadId });
+            buildManagedBranchName({
+              branchPrefix: getAppSettings(deps.db).managedBranchPrefix,
+              threadId: args.threadId,
+            });
           const baseBranch = storedBaseBranchNameToSpec(
             args.environment.baseBranch,
           );
@@ -1053,7 +1057,11 @@ export async function dispatchManagedEnvironmentReprovision(
           });
         })();
 
-  args.beforeProvisionCommandStart?.();
+  const provisionEventSequence =
+    args.beforeProvisionCommandStart?.() ?? args.provisionEventSequence;
+  if (provisionEventSequence === undefined) {
+    throw new Error("Managed reprovision requires a provisioning event");
+  }
   applyLoggedEnvironmentLifecycleEvent(deps, {
     environmentId: args.environment.id,
     event: { type: "provision.requested" },
@@ -1063,7 +1071,7 @@ export async function dispatchManagedEnvironmentReprovision(
     request: { command },
   });
   return {
-    provisionEventSequence: args.provisionEventSequence,
+    provisionEventSequence,
     status: MANAGED_REPROVISION_STARTED,
   };
 }

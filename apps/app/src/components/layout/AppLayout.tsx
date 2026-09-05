@@ -1,9 +1,12 @@
+import { type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import {
-  type MouseEvent as ReactMouseEvent,
-  type Ref,
-  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
 } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { atom, useAtom, useAtomValue, useStore } from "jotai";
 import { atomWithStorage } from "jotai/utils";
@@ -22,6 +25,7 @@ import {
 } from "@/components/thread/ThreadTitleMentions";
 import { AppCommandShortcutHint } from "@/components/commands/AppCommandShortcutHint";
 import { CommandPalette } from "@/components/commands/CommandPalette";
+import { NotificationCenter } from "@/components/notifications/NotificationCenter";
 import {
   resolveAutomationBreadcrumbs,
   resolveToolsAreaHeaderMeta,
@@ -42,6 +46,11 @@ import {
 import { useRouteState } from "@/hooks/useRouteState";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
 import { cn } from "@bb/shared-ui/lib/utils";
+import { APP_OVERLAY_LAYER } from "@/components/ui/app-overlay-layers";
+import {
+  getCompactSecondaryPanelPresentation,
+  subscribeCompactSecondaryPanelShelfShowing,
+} from "@/components/ui/secondary-panel-shelf-visibility";
 import { ProjectPathDialog } from "@/components/dialogs/ProjectPathDialog";
 import { ProjectActionsMenu } from "@/components/project/ProjectActionsMenu";
 import { ProjectActionsProvider } from "@/components/project/ProjectActionsProvider";
@@ -49,6 +58,7 @@ import {
   PluginPanelHeaderActions,
   PluginPanelHeaderCenter,
 } from "@/components/plugin/PluginPanelHeader";
+import { PluginAppOverlays } from "@/components/plugin/PluginAppOverlays";
 import { ThreadActionsProvider } from "@/components/thread/ThreadActionsProvider";
 import {
   usePluginNavPanelChrome,
@@ -100,6 +110,7 @@ import { findPaneByThread } from "@/lib/split-layout";
 import { applyThreadOpenToLayout } from "@/views/thread-detail/splitThreadNavigation";
 import { useAppSettingsRouteMemory } from "@/hooks/useAppSettingsRouteMemory";
 import { useSetRootComposeProjectId } from "@/lib/root-compose-selection";
+import { BackToAppCommandHandler } from "./BackToAppCommandHandler";
 
 const SIDEBAR_WIDTH_KEY = "bb.sidebar.width";
 const SIDEBAR_OPEN_KEY = "bb.sidebar.open";
@@ -148,17 +159,13 @@ const sidebarOpenAtom = atomWithStorage<boolean>(
 );
 
 interface SidebarStateBridgeProps {
-  providerRef: Ref<HTMLDivElement>;
   children: ReactNode;
 }
 
 type SidebarResizeMouseEvent = ReactMouseEvent<HTMLDivElement>;
 type SidebarOpenChangeHandler = (open: boolean) => void;
 
-function SidebarStateBridge({
-  providerRef,
-  children,
-}: SidebarStateBridgeProps) {
+function SidebarStateBridge({ children }: SidebarStateBridgeProps) {
   const [open, setOpen] = useAtom(sidebarOpenAtom);
   const sidebarWidth = useAtomValue(sidebarWidthAtom);
   const sidebarLiveWidth = useAtomValue(sidebarLiveWidthAtom);
@@ -175,7 +182,6 @@ function SidebarStateBridge({
   });
   return (
     <SidebarProvider
-      ref={providerRef}
       width={`${sidebarLiveWidth ?? sidebarWidth}px`}
       data-testid="app-layout-root"
       open={open}
@@ -199,7 +205,16 @@ function SidebarTriggerOverlay({
   reserveMacosTrafficLights,
   usesDesktopChrome,
 }: SidebarTriggerOverlayProps) {
+  const isCompactViewport = useIsCompactViewport();
+  const compactSecondaryPanelPresentation = useSyncExternalStore(
+    subscribeCompactSecondaryPanelShelfShowing,
+    getCompactSecondaryPanelPresentation,
+    () => "closed",
+  );
   const shortcut = useAppCommandShortcut("sidebar.toggle");
+  if (isCompactViewport && compactSecondaryPanelPresentation !== "closed") {
+    return null;
+  }
   const triggerProps = {
     "aria-label": shortcut
       ? `Toggle sidebar (${shortcut.label})`
@@ -210,8 +225,9 @@ function SidebarTriggerOverlay({
     return (
       <div
         data-testid="app-desktop-sidebar-trigger"
+        style={{ zIndex: APP_OVERLAY_LAYER.sidebarTrigger }}
         className={cn(
-          "fixed top-0 z-50",
+          "fixed top-0",
           CHROME_ROW_CLASS,
           reserveMacosTrafficLights
             ? MACOS_TRAFFIC_LIGHT_RESERVE_OFFSET_CLASS
@@ -238,8 +254,9 @@ function SidebarTriggerOverlay({
   return (
     <div
       data-testid="app-sidebar-trigger-overlay"
+      style={{ zIndex: APP_OVERLAY_LAYER.sidebarTrigger }}
       className={cn(
-        "fixed top-[env(safe-area-inset-top)] left-[env(safe-area-inset-left)] z-50",
+        "fixed top-[env(safe-area-inset-top)] left-[env(safe-area-inset-left)]",
         CHROME_ROW_CLASS,
         BROWSER_SIDEBAR_TRIGGER_INSET_CLASS,
       )}
@@ -360,14 +377,12 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isCompactViewport = useIsCompactViewport();
   const store = useStore();
   const contentShellRef = useRef<HTMLDivElement>(null);
-  const providerRef = useRef<HTMLDivElement>(null);
   const restoreIOSViewportOnKeyboardDismissal = useMemo(
     () => shouldRestoreIOSViewportOnKeyboardDismissal(navigator),
     [],
   );
   useMobileVisualViewportHeight(
     contentShellRef,
-    providerRef,
     isCompactViewport,
     restoreIOSViewportOnKeyboardDismissal,
   );
@@ -466,6 +481,11 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isGlobalSettingsView =
     matchPath(`${SETTINGS_ROUTE_PATH}/*`, location.pathname) !== null;
   const isGlobalToolsView = isToolsRoutePath(location.pathname);
+  const backToAppRoutePath = isGlobalSettingsView
+    ? appRoutePath
+    : isGlobalToolsView
+      ? toolsBackRoutePath
+      : null;
   const pluginPanelMatch = matchPath(
     PLUGIN_PANEL_ROUTE_PATH,
     location.pathname,
@@ -731,7 +751,10 @@ export function AppLayout({ children }: AppLayoutProps) {
     <ProjectActionsProvider>
       <ThreadTitleMentionResourcesProvider {...titleMentionResources}>
         <ThreadActionsProvider>
-          <SidebarStateBridge providerRef={providerRef}>
+          <SidebarStateBridge>
+            {backToAppRoutePath !== null && !isSidebarResizing ? (
+              <BackToAppCommandHandler routePath={backToAppRoutePath} />
+            ) : null}
             <AppLayoutSidebar
               mode={
                 isGlobalSettingsView
@@ -778,6 +801,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               usesDesktopChrome={usesDesktopChrome}
             />
           </SidebarStateBridge>
+          <PluginAppOverlays />
           <IframeDragGuardOverlay
             active={isSidebarResizing}
             cursor="col-resize"
@@ -786,6 +810,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             threadId={threadId ?? null}
             projectId={projectId ?? null}
           />
+          <NotificationCenter />
           <ProjectPathDialog
             target={quickCreateProject.projectPathDialog.target}
             pending={quickCreateProject.isCreating}

@@ -80,6 +80,7 @@ interface DefaultTurnEventOptions extends EventFactoryRowOptions {
 }
 
 type ClientTurnRequestedArgs = EventFactoryRowOptions & {
+  /** Dispatch-gate provenance; omitted means no gate amended the turn. */
   execution?: ResolvedThreadExecutionOptions;
   initiator?: ThreadTurnInitiator;
   input?: PromptInput[];
@@ -126,6 +127,10 @@ interface ReasoningCompletedArgs extends ProviderTurnEventOptions {
 
 interface ReasoningDeltaArgs extends ProviderTurnEventOptions {
   delta: string;
+  itemId?: string;
+}
+
+interface ReasoningStartedArgs extends ProviderTurnEventOptions {
   itemId?: string;
 }
 
@@ -195,6 +200,7 @@ interface CommandCompletedArgs extends ProviderTurnEventOptions {
   cwd?: string;
   exitCode?: number;
   itemId?: string;
+  presentation?: ThreadEventItemPresentation;
   status?: "pending" | "completed" | "failed" | "interrupted";
 }
 
@@ -376,6 +382,9 @@ export interface TimelineEventFactory {
   reasoningDelta(
     args: ReasoningDeltaArgs,
   ): ThreadEventRowOfType<"item/reasoning/textDelta">;
+  reasoningStarted(
+    args?: ReasoningStartedArgs,
+  ): ThreadEventRowOfType<"item/started">;
   systemError(args: SystemErrorArgs): ThreadEventRowOfType<"system/error">;
   systemOperation(
     args: SystemOperationArgs,
@@ -675,6 +684,7 @@ export function createTimelineEventFactory(
             exitCode: args.exitCode,
             status: args.status ?? "completed",
             approvalStatus: args.approvalStatus ?? null,
+            ...(args.presentation ? { presentation: args.presentation } : {}),
           },
         },
       };
@@ -708,6 +718,7 @@ export function createTimelineEventFactory(
             exitCode: args.exitCode,
             status: args.status ?? "pending",
             approvalStatus: args.approvalStatus ?? null,
+            ...(args.presentation ? { presentation: args.presentation } : {}),
           },
         },
       };
@@ -1266,6 +1277,9 @@ export function createTimelineEventFactory(
             id: args.itemId ?? `reasoning-${base.seq}`,
             summary: [],
             content: [args.text],
+            ...(args.parentToolCallId
+              ? { parentToolCallId: args.parentToolCallId }
+              : {}),
           },
         },
       };
@@ -1279,6 +1293,28 @@ export function createTimelineEventFactory(
           ...providerFields(args),
           itemId: args.itemId ?? `reasoning-${base.seq}`,
           delta: args.delta,
+          ...(args.parentToolCallId
+            ? { parentToolCallId: args.parentToolCallId }
+            : {}),
+        },
+      };
+    },
+    reasoningStarted(args = {}) {
+      const base = nextProviderTurnScopedRowBase("reasoning-started", args);
+      return {
+        ...base,
+        type: "item/started",
+        data: {
+          ...providerFields(args),
+          item: {
+            type: "reasoning",
+            id: args.itemId ?? `reasoning-${base.seq}`,
+            summary: [],
+            content: [],
+            ...(args.parentToolCallId
+              ? { parentToolCallId: args.parentToolCallId }
+              : {}),
+          },
         },
       };
     },

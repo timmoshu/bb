@@ -10,6 +10,7 @@ import { AppLayout } from "./components/layout/AppLayout";
 import { AuthCallbackView } from "./views/AuthCallbackView";
 import { QuickCreateProjectProvider } from "./hooks/useQuickCreateProject";
 import { RouteNavigationProvider } from "./components/ui/app-route-anchor";
+import { RouteNavigationIndicator } from "./components/ui/route-navigation-indicator";
 import { AppNavigationUrlHost } from "./lib/url-open-routing";
 import { NativeShellReporter } from "./lib/native-shell";
 import { AppFileExternalNavigationHost } from "./components/plugin/AppFileExternalNavigationHost";
@@ -55,7 +56,6 @@ import {
 } from "./lib/route-paths";
 import { AppCommandProvider } from "./components/commands/AppCommandProvider";
 import { ProviderCliInstallLogDialogHost } from "./components/provider-cli/provider-cli-install";
-import { PluginSettingsCompatibilityRoute } from "./components/settings/PluginSettingsCompatibilityRoute";
 import { RouteLoadingSkeleton } from "./components/ui/route-loading-skeleton";
 
 const SettingsView = lazy(() =>
@@ -214,20 +214,9 @@ function AppRoutes() {
           />
           <Route
             path={SETTINGS_PLUGINS_ROUTE_PATH}
-            element={
-              <PluginSettingsCompatibilityRoute>
-                <SettingsView />
-              </PluginSettingsCompatibilityRoute>
-            }
+            element={<SettingsView />}
           />
-          <Route
-            path={SETTINGS_PLUGIN_ROUTE_PATH}
-            element={
-              <PluginSettingsCompatibilityRoute>
-                <SettingsView />
-              </PluginSettingsCompatibilityRoute>
-            }
-          />
+          <Route path={SETTINGS_PLUGIN_ROUTE_PATH} element={<SettingsView />} />
           <Route
             path={SETTINGS_MACHINE_ROUTE_PATH}
             element={<MachineSettingsView />}
@@ -294,7 +283,10 @@ function AppRoutes() {
             path={TOOLS_REGISTRY_SKILL_DETAIL_ROUTE_PATH}
             element={<ToolsView />}
           />
-          <Route path={TOOLS_PLUGINS_ROUTE_PATH} element={<ToolsView />} />
+          <Route
+            path={`${TOOLS_PLUGINS_ROUTE_PATH}/*`}
+            element={<ToolsPluginsRoute />}
+          />
           <Route
             path={TOOLS_PLUGIN_BROWSE_ROUTE_PATH}
             element={<ExtensionsLandingRedirect />}
@@ -327,6 +319,11 @@ function RouteContentPaintSignal() {
   return null;
 }
 
+function ToolsPluginsRoute() {
+  const { "*": pluginId } = useParams<"*">();
+  return <ToolsView pluginId={pluginId || undefined} />;
+}
+
 export function App() {
   useWebSocket();
   useDesktopThemeSync();
@@ -339,6 +336,7 @@ export function App() {
     <QuickCreateProjectProvider>
       <AppCommandProvider>
         <RouteNavigationProvider>
+          <RouteNavigationIndicator />
           <AppNavigationUrlHost>
             <AppFileExternalNavigationHost>
               <HashNavigationScroll />

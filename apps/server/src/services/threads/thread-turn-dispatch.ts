@@ -23,12 +23,13 @@ import {
   throwThreadEnvironmentUnavailable,
 } from "../lib/lifecycle-api-errors.js";
 import {
-  appendThreadProvisioningEvent,
+  appendThreadProvisioningEventInTransaction,
   getLastProviderThreadId,
 } from "./thread-events.js";
 import { requestThreadReprovision } from "./thread-provisioning.js";
-import { applyLoggedThreadLifecycleEvent } from "./lifecycle-outcome.js";
+import { applyLoggedThreadLifecycleEventInTransaction } from "./lifecycle-outcome.js";
 import { applyLoggedEnvironmentLifecycleEvent } from "../environments/lifecycle-outcome.js";
+import { buildThreadStatusChangeMetadata } from "./thread-runtime-display.js";
 
 export interface ReadyThreadEnvironment extends Environment {
   path: string;
@@ -124,30 +125,13 @@ export async function dispatchTurnDuringReprovision(
     hostId: args.environment.hostId,
   });
 
-  if (
-    args.thread.status === "idle" ||
-    canRecoverPreStartErroredThread(args.deps, args.thread)
-  ) {
-    applyLoggedThreadLifecycleEvent(args.deps, {
-      event: { type: "run.preparing" },
-      threadId: args.thread.id,
-    });
-  }
   const provisioningId = createThreadProvisioningId();
-  const provisionEventSequence = appendThreadProvisioningEvent(args.deps, {
-    threadId: args.thread.id,
-    environmentId: args.environment.id,
-    provisioningId,
-    status: "active",
-    entries: [
-      {
-        type: "step",
-        key: "workspace-restore-started",
-        text: reprovisionStartedText(args.environment.workspaceProvisionType),
-        status: "started",
-      },
-    ],
-  });
+  const committed: {
+    lifecycle: ReturnType<
+      typeof applyLoggedThreadLifecycleEventInTransaction
+    > | null;
+    provisionEventSequence: number | null;
+  } = { lifecycle: null, provisionEventSequence: null };
 
   const reprovisionResult = await dispatchManagedEnvironmentReprovision(
     args.deps,
@@ -158,7 +142,39 @@ export async function dispatchTurnDuringReprovision(
             args.beforeRequestAppendInTransaction,
           thread: args.thread,
           environment: args.environment,
-          provisionEventSequence,
+          provisionEventSequence: ({ tx }) => {
+            if (
+              args.thread.status === "idle" ||
+              canRecoverPreStartErroredThread(args.deps, args.thread)
+            ) {
+              committed.lifecycle =
+                applyLoggedThreadLifecycleEventInTransaction(
+                  { db: tx, logger: args.deps.logger },
+                  {
+                    event: { type: "run.preparing" },
+                    threadId: args.thread.id,
+                  },
+                );
+            }
+            committed.provisionEventSequence =
+              appendThreadProvisioningEventInTransaction(tx, {
+                threadId: args.thread.id,
+                environmentId: args.environment.id,
+                provisioningId,
+                status: "active",
+                entries: [
+                  {
+                    type: "step",
+                    key: "workspace-restore-started",
+                    text: reprovisionStartedText(
+                      args.environment.workspaceProvisionType,
+                    ),
+                    status: "started",
+                  },
+                ],
+              });
+            return committed.provisionEventSequence;
+          },
           input: args.input,
           inputGroups: args.inputGroups,
           execution: args.execution,
@@ -168,10 +184,33 @@ export async function dispatchTurnDuringReprovision(
           systemMessageKind: args.systemMessageKind,
           systemMessageSubject: args.systemMessageSubject,
         });
+        if (committed.lifecycle?.applied) {
+          args.deps.hub.notifyThread(
+            args.thread.id,
+            ["status-changed"],
+            buildThreadStatusChangeMetadata(
+              args.deps,
+              committed.lifecycle.thread,
+            ),
+          );
+        }
+        args.deps.hub.notifyThread(args.thread.id, ["events-appended"], {
+          eventTypes: ["system/thread-provisioning"],
+        });
+        if (committed.provisionEventSequence === null) {
+          throw new Error("Reprovision event was not committed");
+        }
+        // The turn above is queued, not sent: it replays when the workspace is
+        // ready, driven by the provisioning machinery that owns that ordering.
+        // It deliberately does NOT become a queued row — the queue carries
+        // dispatches core will re-ATTEMPT, and this one is already committed
+        // to a specific replay. Messages that arrive DURING the reprovision do
+        // queue, on `waitingOn: provisioning`, and the workspace-ready drain
+        // releases them.
+        return committed.provisionEventSequence;
       },
       environment: args.environment,
       projectId: args.thread.projectId,
-      provisionEventSequence,
       provisioningId,
       threadId: args.thread.id,
     },

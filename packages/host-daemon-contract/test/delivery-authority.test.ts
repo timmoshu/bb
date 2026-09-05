@@ -56,9 +56,9 @@ const fullOptions = {
   permissionEscalation: null,
 };
 
-describe("deliveryAuthority on protocol 175", () => {
-  it("is 175", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(175);
+describe("deliveryAuthority on protocol 181", () => {
+  it("is 181", () => {
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(181);
   });
 
   it("requires none or git and reconstructs the exact value", () => {

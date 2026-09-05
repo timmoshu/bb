@@ -251,7 +251,7 @@ export function registerWorkTogetherCoordinationRoutes(
             startedOnBehalfOf: null,
             title: parsed.data.title,
           },
-          { threadId },
+          { threadId, markWorkTogetherCoordination: true },
         );
       } catch (error) {
         const raced = getThread(deps.db, threadId);
@@ -274,7 +274,6 @@ export function registerWorkTogetherCoordinationRoutes(
         }
         throw error;
       }
-      markWorkTogetherCoordinationThread(deps.db, thread.id);
       return context.json(
         {
           created: true,
