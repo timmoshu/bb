@@ -902,7 +902,6 @@ function canStartFreshAfterMissingRollout(args: {
     args.request.kind === "resume" &&
     args.options.deliveryAuthority === "none" &&
     args.error instanceof CodexAppServerRequestError &&
-    args.error.code === -32603 &&
     args.error.message ===
       `no rollout found for thread id ${args.request.providerThreadId}`
   );

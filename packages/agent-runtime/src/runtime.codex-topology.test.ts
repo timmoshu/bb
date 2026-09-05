@@ -526,6 +526,7 @@ describe("codex process topology", () => {
         extraEnv: { CODEX_HOME: codexHome },
         fakeScript: {
           requestLogPath: join(workspaceDir, "app-server-requests.log"),
+          resumeErrorCode: -32001,
           resumeErrorMessage: "no rollout found for thread id {threadId}",
           turns: [
             [

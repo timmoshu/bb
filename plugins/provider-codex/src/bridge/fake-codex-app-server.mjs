@@ -167,6 +167,7 @@ const archivedThreadIds = new Set();
  */
 const processLogPath = script?.processLogPath ?? null;
 const requestLogPath = script?.requestLogPath ?? null;
+const resumeErrorCode = script?.resumeErrorCode ?? -32603;
 const resumeErrorMessage = script?.resumeErrorMessage ?? null;
 const sandboxProbe = script?.sandboxProbe ?? null;
 /** `startDelayMs`: answer `thread/start` only after this many milliseconds. */
@@ -388,7 +389,7 @@ async function handleRequest(message) {
       if (resumeErrorMessage !== null) {
         respondError(
           id,
-          -32603,
+          resumeErrorCode,
           resumeErrorMessage.replace("{threadId}", params.threadId),
         );
         return;
