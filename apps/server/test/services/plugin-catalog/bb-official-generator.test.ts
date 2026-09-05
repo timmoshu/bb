@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { PLUGIN_CATALOG_CATEGORIES } from "@bb/domain";
+import {
+  marketplaceEntryV2Schema,
+  PLUGIN_CATALOG_CATEGORIES,
+} from "@bb/domain";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   generateBbOfficialMarketplace,
@@ -184,10 +187,28 @@ describe("bb-official marketplace generator", () => {
       },
     });
 
-    expect(dates.get("sample")).toEqual({
-      publishedAt: "2026-01-02T03:04:05Z",
-      updatedAt: "2026-02-03T04:05:06Z",
-    });
+    const sample = dates.get("sample");
+    expect(sample).toBeDefined();
+    const publishedMs = Date.parse(sample!.publishedAt);
+    const updatedMs = Date.parse(sample!.updatedAt);
+    expect(publishedMs).toBe(Date.parse("2026-01-02T03:04:05Z"));
+    expect(updatedMs).toBe(Date.parse("2026-02-03T04:05:06Z"));
+    expect(publishedMs).toBeLessThan(updatedMs);
+    expect(
+      marketplaceEntryV2Schema.safeParse({
+        id: "sample",
+        displayName: "Sample",
+        description: "A sample plugin.",
+        icon: { url: "./sample.svg" },
+        tags: ["utilities"],
+        author: { name: "Test", github: "test" },
+        source: {
+          npm: { package: "bb-plugin-sample", range: "1.0.0" },
+        },
+        publishedAt: sample!.publishedAt,
+        updatedAt: sample!.updatedAt,
+      }).success,
+    ).toBe(true);
   });
 
   it("omits dates and prints one warning in a shallow repository", async () => {
