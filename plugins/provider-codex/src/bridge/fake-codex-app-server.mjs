@@ -166,6 +166,8 @@ const archivedThreadIds = new Set();
  * see the children die on release, archive, and bridge shutdown.
  */
 const processLogPath = script?.processLogPath ?? null;
+const requestLogPath = script?.requestLogPath ?? null;
+const resumeErrorMessage = script?.resumeErrorMessage ?? null;
 const sandboxProbe = script?.sandboxProbe ?? null;
 /** `startDelayMs`: answer `thread/start` only after this many milliseconds. */
 const startDelayMs = script?.startDelayMs ?? 0;
@@ -338,6 +340,9 @@ function replayLastTurnUsage(threadId) {
 async function handleRequest(message) {
   const { id, method } = message;
   const params = message.params ?? {};
+  if (requestLogPath !== null) {
+    appendFileSync(requestLogPath, `${method}\n`);
+  }
   switch (method) {
     case "initialize":
       respond(id, {});
@@ -374,12 +379,20 @@ async function handleRequest(message) {
         await new Promise((resolve) => setTimeout(resolve, startDelayMs));
       }
       threadCounter += 1;
-      const threadId = `codex-fx-${process.pid}-${threadCounter}`;
+      const threadId = `codex-fx-${processInstanceId}-${threadCounter}`;
       notify("thread/started", { thread: { id: threadId } });
       respond(id, { thread: { id: threadId } });
       return;
     }
     case "thread/resume": {
+      if (resumeErrorMessage !== null) {
+        respondError(
+          id,
+          -32603,
+          resumeErrorMessage.replace("{threadId}", params.threadId),
+        );
+        return;
+      }
       // Scripted archived-session rejection: the real app-server refuses to
       // resume an archived thread with an error naming the session. Tests use
       // an `archived-` provider-thread-id prefix to trigger it.
@@ -422,7 +435,7 @@ async function handleRequest(message) {
       const replaysUsage = String(params.threadId).startsWith("usage-replay-");
       const threadId = replaysUsage
         ? `usage-replay-fork-${process.pid}-${threadCounter}`
-        : `codex-fx-${process.pid}-fork-${threadCounter}`;
+        : `codex-fx-${processInstanceId}-fork-${threadCounter}`;
       respond(id, { thread: { id: threadId } });
       // thread/fork replays the source rollout's last-turn usage the same way,
       // after the response, under the NEW thread id but the SOURCE turn id

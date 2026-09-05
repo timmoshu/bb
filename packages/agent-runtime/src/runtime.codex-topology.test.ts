@@ -152,6 +152,16 @@ describe("codex process topology", () => {
     );
   }
 
+  function requestMethods(): string[] {
+    try {
+      return readFileSync(join(workspaceDir, "app-server-requests.log"), "utf8")
+        .split("\n")
+        .filter((line) => line.length > 0);
+    } catch {
+      return [];
+    }
+  }
+
   async function startCodexThread(
     runtime: LaunchBoundAgentRuntime,
     threadId: string,
@@ -498,6 +508,165 @@ describe("codex process topology", () => {
     });
     expect(runtime.hasThread("t1")).toBe(false);
     expect(runtime.hasThread("t2")).toBe(false);
+  }, 30_000);
+
+  it("starts a fresh none-authority session after an exact missing-rollout resume and sends Reply once", async () => {
+    const codexHome = join(workspaceDir, "codex-source");
+    mkdirSync(codexHome);
+    writeFileSync(join(codexHome, "auth.json"), "{}");
+    const toolNames = [
+      "wt_checkpoint_report",
+      "wt_result_report",
+      "wt_needs_you_report",
+      "wt_repository_deliver",
+    ];
+    const toolCalls: string[] = [];
+    const createTopology = (): CodexTopologyRuntime =>
+      createCodexTopologyRuntime({
+        extraEnv: { CODEX_HOME: codexHome },
+        fakeScript: {
+          requestLogPath: join(workspaceDir, "app-server-requests.log"),
+          resumeErrorMessage: "no rollout found for thread id {threadId}",
+          turns: [
+            [
+              {
+                method: "turn/started",
+                params: {
+                  threadId: "fixture",
+                  turn: { id: "turn-reply", status: "inProgress" },
+                },
+              },
+              ...toolNames.map((tool, index) => ({
+                kind: "request",
+                method: "item/tool/call",
+                params: {
+                  threadId: "fixture",
+                  turnId: "turn-reply",
+                  callId: `reply-call-${index}`,
+                  tool,
+                  arguments: {},
+                },
+              })),
+              {
+                method: "turn/completed",
+                params: {
+                  threadId: "fixture",
+                  turn: { id: "turn-reply", status: "completed" },
+                },
+              },
+            ],
+          ],
+        },
+        onToolCall: async (request) => {
+          toolCalls.push(request.tool);
+          return {
+            contentItems: [{ type: "inputText", text: "ok" }],
+            success: true,
+          };
+        },
+      });
+    let topology = createTopology();
+    const options = {
+      ...fullRuntimeOptions,
+      deliveryAuthority: "none" as const,
+      executionCwd: workspaceDir,
+    };
+    const dynamicTools = toolNames.map((name) => ({
+      name,
+      description: name,
+      inputSchema: {
+        type: "object" as const,
+        properties: {},
+        additionalProperties: false,
+      },
+    }));
+    const originalProviderThreadId = await startCodexThread(
+      topology.runtime,
+      "t1",
+      undefined,
+      options,
+      dynamicTools,
+    );
+    await topology.runtime.shutdown();
+    topology = createTopology();
+    const replacement = await topology.runtime.resumeThread({
+      bridgeLaunch: topology.launch("codex-v2"),
+      environmentId: "env-1",
+      projectId: "p1",
+      providerId: "codex",
+      providerThreadId: originalProviderThreadId,
+      threadId: "t1",
+      options,
+      dynamicTools,
+    });
+    expect(replacement.providerThreadId).not.toBe(originalProviderThreadId);
+    await topology.runtime.runTurn({
+      clientRequestId: "creq_23456789ac",
+      threadId: "t1",
+      input: [promptTextInput({ text: "Reply" })],
+      options,
+    });
+    await waitForRuntimeState({
+      label: "the replacement session routed all WT tools",
+      predicate: () => toolCalls.length === toolNames.length,
+      timeoutMs: 5_000,
+    });
+    expect(toolCalls).toEqual(toolNames);
+    expect(
+      requestMethods().filter((method) => method === "thread/resume"),
+    ).toHaveLength(1);
+    expect(
+      requestMethods().filter((method) => method === "thread/start"),
+    ).toHaveLength(2);
+    expect(
+      requestMethods().filter((method) => method === "turn/start"),
+    ).toHaveLength(1);
+  }, 30_000);
+
+  it("does not start a fresh session for other resume failures", async () => {
+    const codexHome = join(workspaceDir, "codex-source");
+    mkdirSync(codexHome);
+    writeFileSync(join(codexHome, "auth.json"), "{}");
+    const createTopology = (): CodexTopologyRuntime =>
+      createCodexTopologyRuntime({
+        extraEnv: { CODEX_HOME: codexHome },
+        fakeScript: {
+          requestLogPath: join(workspaceDir, "app-server-requests.log"),
+          resumeErrorMessage: "permission denied",
+        },
+      });
+    let topology = createTopology();
+    const options = {
+      ...fullRuntimeOptions,
+      deliveryAuthority: "none" as const,
+      executionCwd: workspaceDir,
+    };
+    const originalProviderThreadId = await startCodexThread(
+      topology.runtime,
+      "t1",
+      undefined,
+      options,
+    );
+    await topology.runtime.shutdown();
+    topology = createTopology();
+    await expect(
+      topology.runtime.resumeThread({
+        bridgeLaunch: topology.launch("codex-v2"),
+        environmentId: "env-1",
+        projectId: "p1",
+        providerId: "codex",
+        providerThreadId: originalProviderThreadId,
+        threadId: "t1",
+        options,
+      }),
+    ).rejects.toThrow("permission denied");
+    expect(
+      requestMethods().filter((method) => method === "thread/resume"),
+    ).toHaveLength(1);
+    expect(
+      requestMethods().filter((method) => method === "thread/start"),
+    ).toHaveLength(1);
+    expect(requestMethods()).not.toContain("turn/start");
   }, 30_000);
 });
 

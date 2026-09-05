@@ -80,6 +80,7 @@ import {
 import {
   createCodexAppServerConnection,
   CodexAppServerExitedError,
+  CodexAppServerRequestError,
   type CodexAppServerConnection,
   type CodexAppServerExitInfo,
   type CodexAppServerRequestResponder,
@@ -284,6 +285,7 @@ const CODEX_ARCHIVED_SESSION_ERROR_PATTERN =
   /\b(?:session|thread)\s+\S+\s+is archived\b/i;
 const CODEX_ALREADY_ARCHIVED_ERROR_PATTERN =
   /\bno rollout found for thread id\b/i;
+
 const CODEX_NOT_ARCHIVED_ERROR_PATTERN =
   /\bno archived rollout found for thread id\b/i;
 const CODEX_EMPTY_ROLLOUT_RENAME_ERROR_PATTERN = /\brollout at .+ is empty\b/i;
@@ -891,6 +893,21 @@ interface ConstructedCodexSession {
   codexThreadId: string;
 }
 
+function canStartFreshAfterMissingRollout(args: {
+  error: unknown;
+  options: CodexSessionOptions;
+  request: CodexSessionConstructionRequest;
+}): boolean {
+  return (
+    args.request.kind === "resume" &&
+    args.options.deliveryAuthority === "none" &&
+    args.error instanceof CodexAppServerRequestError &&
+    args.error.code === -32603 &&
+    args.error.message ===
+      `no rollout found for thread id ${args.request.providerThreadId}`
+  );
+}
+
 async function constructThreadSession(
   args: ConstructThreadSessionArgs,
 ): Promise<ConstructedCodexSession> {
@@ -1023,12 +1040,36 @@ async function constructThreadSession(
       }
     }
 
-    const result = await connection.request({
-      method,
-      params,
-      resultSchema: codexThreadIdentityResultSchema,
-      timeoutMs: CHILD_REQUEST_TIMEOUT_MS,
-    });
+    let result: z.infer<typeof codexThreadIdentityResultSchema>;
+    try {
+      result = await connection.request({
+        method,
+        params,
+        resultSchema: codexThreadIdentityResultSchema,
+        timeoutMs: CHILD_REQUEST_TIMEOUT_MS,
+      });
+    } catch (error) {
+      if (
+        !canStartFreshAfterMissingRollout({
+          error,
+          options: decoded.sessionOptions,
+          request: args.request,
+        })
+      ) {
+        throw error;
+      }
+      const startParams: BbThreadStartParams = {
+        ...sharedConstructionParams,
+        ephemeral: false,
+        experimentalRawEvents: true,
+      };
+      result = await connection.request({
+        method: "thread/start",
+        params: startParams,
+        resultSchema: codexThreadIdentityResultSchema,
+        timeoutMs: CHILD_REQUEST_TIMEOUT_MS,
+      });
+    }
     const codexThreadId = result.thread.id;
     session.codexThreadId = codexThreadId;
     translator.activateThreadGitWritableRoots({

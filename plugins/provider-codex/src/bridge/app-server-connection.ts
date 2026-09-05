@@ -60,6 +60,16 @@ export class CodexAppServerExitedError extends Error {
   }
 }
 
+export class CodexAppServerRequestError extends Error {
+  readonly code: number | undefined;
+
+  constructor(code: number | undefined, message: string) {
+    super(message);
+    this.name = "CodexAppServerRequestError";
+    this.code = code;
+  }
+}
+
 interface PendingChildRequest {
   resolve(value: unknown): void;
   reject(error: Error): void;
@@ -198,7 +208,8 @@ export function createCodexAppServerConnection(
         }
         if (message.error) {
           request.reject(
-            new Error(
+            new CodexAppServerRequestError(
+              message.error.code,
               message.error.message ??
                 `codex app-server returned error code ${message.error.code ?? "unknown"}`,
             ),
